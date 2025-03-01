@@ -16,6 +16,12 @@ export class WebSocketClient {
     private isConnecting: boolean = false;
     private lastMessageTime: number = Date.now();
     private connectionCheckInterval: NodeJS.Timeout | null = null;
+    
+    // Add a message cache to prevent duplicate processing
+    private recentMessages: Map<string, number> = new Map();
+    private readonly MESSAGE_CACHE_TIMEOUT = 60000; // 60 seconds
+    // Add a set to track processed transaction hashes
+    private processedTxHashes: Set<string> = new Set();
 
     constructor(bot: TelegramBot) {
         this.bot = bot;
@@ -36,7 +42,7 @@ export class WebSocketClient {
         }
 
         this.isConnecting = true;
-        const wsUrl = `ws://${process.env.FETCHER_HOST || 'localhost'}:2137`;
+        const wsUrl = `ws://${process.env.FETCHER_HOST || 'localhost'}:${process.env.FETCHER_PORT || 3000}`;
         logInfo('WebSocket', `Connecting to ${wsUrl} (attempt ${this.reconnectCount + 1})`);
         
         // Add connection timeout
@@ -254,6 +260,7 @@ export class WebSocketClient {
     public close(): void {
         logInfo('WebSocket', 'Closing WebSocket client');
         
+        // Clear all caches and timeouts
         if (this.reconnectTimeout) {
             clearTimeout(this.reconnectTimeout);
             this.reconnectTimeout = null;
@@ -264,20 +271,92 @@ export class WebSocketClient {
             this.connectionCheckInterval = null;
         }
         
+        this.recentMessages.clear();
+        this.processedTxHashes.clear();
         this.cleanup();
     }
     
+    /**
+     * Check if a buy message is a duplicate with stronger checks
+     */
+    private isDuplicateBuyMessage(message: any): boolean {
+        if (!message || !message.gotToken) return false;
+        
+        // Use txHash for strongest deduplication if available
+        if (message.txHash) {
+            if (this.processedTxHashes.has(message.txHash)) {
+                logInfo('WebSocket', `Detected duplicate transaction: ${message.txHash}`);
+                return true;
+            }
+            
+            // Add to our processed tx hashes
+            this.processedTxHashes.add(message.txHash);
+            
+            // Clean up tx hash set if it gets too large
+            if (this.processedTxHashes.size > 1000) {
+                // Just clear all for simplicity - in production you'd want to be more selective
+                logInfo('WebSocket', 'Clearing transaction hash cache (reached 1000 entries)');
+                this.processedTxHashes.clear();
+            }
+        }
+        
+        // Create multiple keys for the message
+        const messageKeys = [
+            // Standard key with all values
+            `${message.holderWallet}-${message.gotToken.address}-${message.gotToken.amount}-${message.spentToken.amount}`,
+            
+            // Key with just token and amounts
+            `${message.gotToken.address}-${message.gotToken.amount}-${message.spentToken.amount}`,
+            
+            // Time-based key for rapid buys
+            `${message.holderWallet}-${message.gotToken.address}-${Math.floor(Date.now()/1000/10)}` 
+        ];
+        
+        const now = Date.now();
+        
+        // Clean up old entries in the message cache
+        for (const [key, timestamp] of this.recentMessages.entries()) {
+            if (now - timestamp > this.MESSAGE_CACHE_TIMEOUT) {
+                this.recentMessages.delete(key);
+            }
+        }
+        
+        // Check if any key exists in our cache
+        for (const key of messageKeys) {
+            if (this.recentMessages.has(key)) {
+                logInfo('WebSocket', `Detected duplicate buy message with key: ${key}`);
+                return true;
+            }
+        }
+        
+        // Store all keys in the cache
+        for (const key of messageKeys) {
+            this.recentMessages.set(key, now);
+        }
+        
+        // Log that this is a new message
+        logInfo('WebSocket', 'New message detected, not a duplicate');
+        return false;
+    }
+
     private async handleBuyMessage(parsedMessage: any): Promise<void> {
         // Parse the message content if it's a string
         const buyMessage = typeof parsedMessage.message === 'string' 
             ? JSON.parse(parsedMessage.message) 
             : parsedMessage.message;
-            
+        
         console.log('Buy message:', buyMessage);
         console.log('Buy message gotToken:', buyMessage?.gotToken?.address);
+        console.log('Buy message txHash:', buyMessage?.txHash || 'none');
         
         if (!buyMessage || !buyMessage.gotToken || !buyMessage.gotToken.address) {
             logError('Buy Message', 'Invalid buy message format');
+            return;
+        }
+        
+        // Check for duplicate with enhanced detection
+        if (this.isDuplicateBuyMessage(buyMessage)) {
+            logInfo('Buy Message', 'Ignoring duplicate buy message');
             return;
         }
         

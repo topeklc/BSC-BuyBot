@@ -1,0 +1,63 @@
+
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+
+# Build outputs
+dist/
+build/
+lib/
+*.js.map
+
+# Environment variables
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+.env*.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDE files
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+.DS_Store
+
+# TypeScript
+*.tsbuildinfo
+
+# Blockchain specific
+.openzeppelin/
+artifacts/
+cache/
+typechain/
+deployments/local/
+
+# Testing
+coverage/
+.nyc_output/
+
+# Temporary files
+tmp/
+temp/
+
+# Debug files
+.debug
+
+# Configuration files with secrets
+config.json
+secrets.json
+
+# Misc
+.npm
+.eslintcache
+.yarn-integrity

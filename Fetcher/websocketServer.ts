@@ -9,7 +9,7 @@ export class WebSocketServer {
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private reconnectAttemptInterval: NodeJS.Timeout | null = null;
   
-  constructor(port: number = 2137) {
+  constructor(port: number = 2111) {
     console.log(`Starting WebSocket server on port ${port}`);
     
     this.initServer(port);
@@ -109,7 +109,7 @@ export class WebSocketServer {
     console.log('Scheduling server restart in 5 seconds...');
     this.reconnectAttemptInterval = setTimeout(() => {
       console.log('Attempting to restart WebSocket server...');
-      this.initServer(2137);  // Default port
+      this.initServer(2111);  // Default port
     }, 5000);
   }
   

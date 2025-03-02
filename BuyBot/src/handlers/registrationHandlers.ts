@@ -557,6 +557,7 @@ const configCallbackHandler = async (bot: TelegramBot, callbackQuery: TelegramBo
                         }
                         await commonWeb3.updatePools(tokenAddress);
                         await updateGroupConfig(currentGroupId, 'address', tokenAddress);
+                        await updateGroupConfigPools(currentGroupId, 'all');
                         
                         await sendConfigMenu(bot, currentGroupId, userId, tokenInfo, callbackQuery.message?.message_id || 0,);
                         

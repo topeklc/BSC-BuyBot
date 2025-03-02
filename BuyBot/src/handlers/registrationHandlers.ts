@@ -112,6 +112,7 @@ const shareChatHandler = async (bot: TelegramBot, msg: any) => {
                 }
 
                 await insertDefaultGroupConfig(sharedChat, tokenAddress);
+                await updateGroupConfigPools(sharedChat, 'all');
                 await sendConfigMenu(bot, sharedChat, userId, tokenInfo);
                 await commonWeb3.updatePools(tokenAddress);
                 return "Token configuration completed successfully";

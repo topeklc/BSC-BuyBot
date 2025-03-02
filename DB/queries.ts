@@ -154,7 +154,7 @@ export const getAllActiveTokens = async () => {
         const query = 'SELECT DISTINCT address FROM group_configs WHERE active = true';
         const result = await postgres.query(query);
         // Return an array of addresses instead of just the first row
-        return result.rows.map(row => row.address);
+        return result.rows.map((row: { address: string }) => row.address);
     } catch (err) {
         console.error('Error getting active tokens:', err);
         return []; // Return empty array on error to avoid further errors
@@ -283,7 +283,7 @@ export const getPoolsForToken = async (tokenAddress: string): Promise<PoolInfo[]
     try {
         const query = `
         SELECT 
-            p.address, p.version, p.token0_address, p.token1_address, p.fee, .p.tick_spacing,
+            p.address, p.version, p.token0_address, p.token1_address, p.fee, p.tick_spacing,
                     CASE 
                         WHEN p.token0_address = $1 THEN CONCAT(t1.symbol, '/', t2.symbol)
                         ELSE CONCAT(t2.symbol, '/', t1.symbol)

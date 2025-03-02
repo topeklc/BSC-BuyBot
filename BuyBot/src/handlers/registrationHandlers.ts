@@ -171,7 +171,7 @@ async function handlePoolsConfig(bot: TelegramBot, chatId: number, messageId: nu
         [{ text: `${isAllSelected ? '❌ Deselect All' : '✅ Select All'}`, callback_data: 'config_pools_select_all' }],
         ...pools.map(pool => ({
             text: `${selectedtokenAddresss.includes(pool.address) ? '✅' : '❌'} ${pool.pairName}`,
-            callback_data: `config_pool_${pool.address}`
+            callback_data: `config_pool_toogle:${pool.address}`
         })).reduce((acc, curr, i) => {
             if (i % 2 === 0) acc.push([curr]);
             else acc[acc.length - 1].push(curr);

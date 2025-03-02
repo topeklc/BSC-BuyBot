@@ -412,10 +412,13 @@ export class CommonWeb3{
             const poolAddressesV3 = await this.getPoolAddresses(ca);
             const allPools = await getAllPools(ca);
             
-            // Log the count of pools found
-            console.log(`Found ${poolAddressesV3.length} pools for token ${ca}`);
+            // Track newly inserted pools to update group configs later
+            const newlyInsertedPools: string[] = [];
             
-            // Process each valid pool address
+            // Log the count of pools found
+            console.log(`Found ${poolAddressesV3.length} V3 pools and ${poolAddressesV2.length} V2 pools for token ${ca}`);
+            
+            // Process each valid V3 pool address
             for (const poolAddress of poolAddressesV3) {
                 try {
                     // Skip if already in database
@@ -448,12 +451,17 @@ export class CommonWeb3{
                     
                     console.log(`Pool ${poolAddress} validation passed, inserting with version ${poolDetails.version}`);
                     await insertPool(poolDetails);
+                    
+                    // Add to newly inserted pools list
+                    newlyInsertedPools.push(poolAddress);
+                    
                 } catch (error) {
                     // Catch errors for individual pools to prevent the whole process from failing
                     console.error(`Error processing pool ${poolAddress}:`, error);
                 }
             }
 
+            // Process each valid V2 pool address
             for (const poolAddress of poolAddressesV2) {
                 try {
                     // Skip if already in database
@@ -486,13 +494,93 @@ export class CommonWeb3{
                     
                     console.log(`Pool ${poolAddress} validation passed, inserting with version ${poolDetails.version}`);
                     await insertPool(poolDetails);
+                    
+                    // Add to newly inserted pools list
+                    newlyInsertedPools.push(poolAddress);
+                    
                 } catch (error) {
                     // Catch errors for individual pools to prevent the whole process from failing
                     console.error(`Error processing pool ${poolAddress}:`, error);
                 }
             }
+
+            // Update group configs with newly inserted pools
+            if (newlyInsertedPools.length > 0) {
+                await this.updateGroupConfigsWithNewPools(ca, newlyInsertedPools);
+            }
         } catch (error) {
             console.error(`Error in updatePools for ${ca}:`, error);
+        }
+    }
+
+    /**
+     * Update all group configurations for a token with newly found pools
+     * @param tokenAddress The token address
+     * @param newPoolAddresses Array of new pool addresses to add
+     */
+    private async updateGroupConfigsWithNewPools(tokenAddress: string, newPoolAddresses: string[]): Promise<void> {
+        try {
+            if (newPoolAddresses.length === 0) return;
+            
+            console.log(`Updating group configs with ${newPoolAddresses.length} new pools for token ${tokenAddress}`);
+            
+            // Get all group configurations that use this token
+            const { getGroupConfigByField, updateGroupConfig } = await import('../DB/queries');
+            const affectedConfigs = await getGroupConfigByField('address', tokenAddress);
+            
+            console.log(`Found ${affectedConfigs.length} group configs for token ${tokenAddress}`);
+            
+            // Update each config with the new pools
+            for (const config of affectedConfigs) {
+                try {
+                    // Skip inactive configs
+                    if (!config.active) {
+                        console.log(`Skipping inactive config for group ${config.group_id}`);
+                        continue;
+                    }
+                    
+                    // Get current pools
+                    const currentPools = Array.isArray(config.pools) ? config.pools : [];
+                    
+                    // Check for pools already in the config
+                    const newPools = newPoolAddresses.filter(newPool => {
+                        // Check if this pool is already in the config
+                        return !currentPools.some((existingPool: any) => {
+                            if (typeof existingPool === 'string') {
+                                try {
+                                    // Try parsing as JSON if stored that way
+                                    const parsed = JSON.parse(existingPool);
+                                    return parsed.address === newPool || parsed.tokenAddress === newPool;
+                                } catch {
+                                    // If not valid JSON, compare directly
+                                    return existingPool === newPool;
+                                }
+                            }
+                            return false;
+                        });
+                    });
+                    
+                    if (newPools.length === 0) {
+                        console.log(`No new pools to add for group ${config.group_id}`);
+                        continue;
+                    }
+                    
+                    console.log(`Adding ${newPools.length} new pools to group ${config.group_id}`);
+                    
+                    // Add new pools to the config
+                    const updatedPools = [...currentPools, ...newPools];
+                    await updateGroupConfig(config.group_id, 'pools', updatedPools);
+                    
+                    console.log(`Successfully updated pools for group ${config.group_id}`);
+                } catch (error) {
+                    console.error(`Error updating pools for group ${config.group_id}:`, error);
+                    // Continue with other configs even if one fails
+                }
+            }
+            
+            console.log(`Finished updating group configs with new pools`);
+        } catch (error) {
+            console.error(`Error updating group configs with new pools:`, error);
         }
     }
 }

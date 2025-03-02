@@ -3,7 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import { WebSocketServer } from './websocketServer';
 import {CommonWeb3, WBNB} from '../CommonWeb3/common';
-import {getAllActiveTokens, getPrice, insertPool, getPoolsForToken} from '../DB/queries';
+import {getAllActiveTokens, getPrice, insertPool, getPoolsForToken, getAllConfigPools} from '../DB/queries';
 import { TokenInfo, BuyMessageData, PoolDetail } from '../types';
 import Web3WsProvider from 'web3-providers-ws'
 import { PoolSwapHandler } from './poolSwapHandler';
@@ -244,7 +244,13 @@ class EventFetcher {
                 return;
             }
             
-            // Check for subscription health
+            // Get all pools from active configurations to determine what we should be subscribed to
+            const activeConfigPools = await getAllConfigPools();
+            const activePoolAddresses = new Set(activeConfigPools.map(pool => pool.address.toLowerCase()));
+            
+            console.log(`Found ${activePoolAddresses.size} pools in active configurations`);
+            
+            // Check for subscription health and manage pool subscriptions
             if (this.subscriptions.length === 0) {
                 console.log('No active subscriptions, resubscribing to everything...');
                 
@@ -258,60 +264,88 @@ class EventFetcher {
                 // Check health of existing subscriptions
                 console.log(`Checking health of ${this.subscriptions.length} subscriptions`);
                 
-                // Verify subscription IDs
-                const subIds = this.subscriptions.map(sub => sub.id || 'unknown-id');
-                console.log('Active subscription IDs:', subIds);
-                
-                // Check if subscriptions are still valid by testing a method call
                 try {
                     await this.web3.eth.getBlockNumber();
                     console.log('Web3 connection is healthy');
                     
-                    // Check for duplicate subscriptions
-                    const uniqueKeys = new Set<string>();
-                    const duplicateKeys = new Set<string>();
-                    const validSubs: any[] = [];
+                    // Filter for pool subscriptions (V2 and V3)
+                    const poolSubscriptions = this.subscriptions.filter(sub => {
+                        if (!sub.options || !sub.options.address || !sub.options.topics || !sub.options.topics[0]) {
+                            return false;
+                        }
+                        const topic = sub.options.topics[0];
+                        return topic === swapV2Topic || topic === swapV3Topic;
+                    });
                     
-                    // Reorganize our subscription tracking
-                    for (const sub of this.subscriptions) {
-                        // Extract the key info if available
-                        if (sub.options && sub.options.address && sub.options.topics && sub.options.topics[0]) {
+                    console.log(`Found ${poolSubscriptions.length} pool subscriptions to evaluate`);
+                    
+                    // Identify pool subscriptions that should be removed
+                    const poolsToUnsubscribe = poolSubscriptions.filter(sub => {
+                        const address = sub.options.address.toLowerCase();
+                        return !activePoolAddresses.has(address);
+                    });
+                    
+                    // Unsubscribe from pools that aren't in active configs
+                    if (poolsToUnsubscribe.length > 0) {
+                        console.log(`Unsubscribing from ${poolsToUnsubscribe.length} pools no longer in active configurations`);
+                        
+                        for (const sub of poolsToUnsubscribe) {
                             const address = sub.options.address.toLowerCase();
                             const topic = sub.options.topics[0];
                             const key = `${address}-${topic}`;
                             
-                            if (uniqueKeys.has(key)) {
-                                console.log(`Found duplicate subscription for ${address} with topic ${topic}`);
-                                duplicateKeys.add(key);
+                            try {
+                                sub.unsubscribe();
+                                console.log(`Unsubscribed from pool: ${address}`);
                                 
-                                try {
-                                    // Keep the existing one in our map and unsubscribe from the duplicate
-                                    sub.unsubscribe();
-                                    console.log(`Unsubscribed from duplicate: ${key}`);
-                                } catch (unsubError) {
-                                    console.error(`Error unsubscribing from duplicate: ${unsubError}`);
+                                // Remove from our tracking
+                                this.subscriptionMap.delete(key);
+                                const index = this.subscriptions.indexOf(sub);
+                                if (index > -1) {
+                                    this.subscriptions.splice(index, 1);
                                 }
-                            } else {
-                                uniqueKeys.add(key);
-                                validSubs.push(sub);
-                                
-                                // Update our subscription map
-                                this.subscriptionMap.set(key, sub);
+                            } catch (error) {
+                                console.error(`Error unsubscribing from pool ${address}:`, error);
                             }
-                        } else {
-                            // If we can't identify the subscription, keep it but log a warning
-                            console.warn('Found subscription without proper identification:', 
-                                sub.id || 'unknown');
-                            validSubs.push(sub);
                         }
                     }
                     
-                    console.log(`Found ${duplicateKeys.size} duplicate subscriptions`);
+                    // Identify new pools that need subscriptions
+                    const currentPoolAddresses = new Set(
+                        poolSubscriptions.map(sub => sub.options.address.toLowerCase())
+                    );
                     
-                    // Update our subscriptions array to only include valid ones
-                    this.subscriptions = validSubs;
+                    const poolsToAdd = activeConfigPools.filter(pool => 
+                        !currentPoolAddresses.has(pool.address.toLowerCase())
+                    );
                     
-                    console.log(`After cleanup: ${this.subscriptions.length} active subscriptions`);
+                    // Subscribe to new pools
+                    if (poolsToAdd.length > 0) {
+                        console.log(`Subscribing to ${poolsToAdd.length} new pools from active configurations`);
+                        
+                        let addedCount = 0;
+                        for (const pool of poolsToAdd) {
+                            try {
+                                if (pool.version === 3) {
+                                    await this.subscribeToPool(pool.address);
+                                    console.log(`Added subscription to pool V3: ${pool.address}`);
+                                    addedCount++;
+                                } else if (pool.version === 2) {
+                                    await this.subscribeToPoolV2(pool.address);
+                                    console.log(`Added subscription to pool V2: ${pool.address}`);
+                                    addedCount++;
+                                }
+                            } catch (error) {
+                                console.error(`Error subscribing to pool ${pool.address}:`, error);
+                            }
+                        }
+                        
+                        console.log(`Successfully added ${addedCount} new pool subscriptions`);
+                    }
+                    
+                    // Clean up duplicate subscriptions
+                    this.cleanupDuplicateSubscriptions();
+                    
                 } catch (error) {
                     console.error('Web3 connection test failed, reconnecting:', error);
                     this.handleDisconnect();
@@ -319,61 +353,145 @@ class EventFetcher {
                 }
             }
             
-            console.log('Subscriptions check complete');
+            console.log(`Subscription check complete, now tracking ${this.subscriptions.length} subscriptions`);
         } catch (error) {
             console.error('Error checking subscriptions:', error);
         }
     }
+    
+    /**
+     * Helper method to clean up duplicate subscriptions
+     */
+    private cleanupDuplicateSubscriptions(): void {
+        const uniqueKeys = new Set<string>();
+        const duplicateKeys = new Set<string>();
+        const validSubs: any[] = [];
+        
+        // Reorganize our subscription tracking
+        for (const sub of this.subscriptions) {
+            // Extract the key info if available
+            if (sub.options && sub.options.address && sub.options.topics && sub.options.topics[0]) {
+                const address = sub.options.address.toLowerCase();
+                const topic = sub.options.topics[0];
+                const key = `${address}-${topic}`;
+                
+                if (uniqueKeys.has(key)) {
+                    console.log(`Found duplicate subscription for ${address} with topic ${topic}`);
+                    duplicateKeys.add(key);
+                    
+                    try {
+                        // Keep the existing one in our map and unsubscribe from the duplicate
+                        sub.unsubscribe();
+                        console.log(`Unsubscribed from duplicate: ${key}`);
+                    } catch (unsubError) {
+                        console.error(`Error unsubscribing from duplicate: ${unsubError}`);
+                    }
+                } else {
+                    uniqueKeys.add(key);
+                    validSubs.push(sub);
+                    
+                    // Update our subscription map
+                    this.subscriptionMap.set(key, sub);
+                }
+            } else {
+                // If we can't identify the subscription, keep it but log a warning
+                console.warn('Found subscription without proper identification:', 
+                    sub.id || 'unknown');
+                validSubs.push(sub);
+            }
+        }
+        
+        console.log(`Found ${duplicateKeys.size} duplicate subscriptions`);
+        
+        // Update our subscriptions array to only include valid ones
+        this.subscriptions = validSubs;
+        
+        console.log(`After cleanup: ${this.subscriptions.length} active subscriptions`);
+    }
 
     private async initDBPoolsSubscriptions() {
         try {
-            console.log('Initializing DB pool subscriptions...');
-            const activeTokens = await getAllActiveTokens();
-            console.log(`Found ${activeTokens.length} active tokens`);
+            console.log('Initializing pool subscriptions from active group configs...');
             
-            if (activeTokens.length === 0) {
-                console.warn('No active tokens found for pool subscriptions');
+            // Get all pools from active group configurations
+            const configPools = await getAllConfigPools();
+            console.log(`Found ${configPools.length} pools in active group configurations`);
+            
+            if (configPools.length === 0) {
+                console.warn('No pools found in any active group configurations');
+                
+                // Fall back to token-based subscription as a safety measure
+                const activeTokens = await getAllActiveTokens();
+                console.log(`Falling back to ${activeTokens.length} active tokens for pool subscriptions`);
+                
+                if (activeTokens.length === 0) {
+                    console.warn('No active tokens found for pool subscriptions');
+                    return;
+                }
+                
+                let subscriptionCount = 0;
+                
+                for (const token of activeTokens) {
+                    try {
+                        const pools = await getPoolsForToken(token);
+                        
+                        if (pools.length > 0) {
+                            console.log(`Subscribing to ${pools.length} pools for token: ${token}`);
+                            
+                            for (const pool of pools) {
+                                try {
+                                    if (pool.version === 3) {
+                                        await this.subscribeToPool(pool.address);
+                                        console.log(`Subscribed to pool V3: ${pool.pairName} (${pool.address})`);
+                                        subscriptionCount++;
+                                    }
+                                    if (pool.version === 2) {
+                                        await this.subscribeToPoolV2(pool.address);
+                                        console.log(`Subscribed to pool: ${pool.pairName} (${pool.address})`);
+                                        subscriptionCount++;
+                                    }
+                                } catch (poolError) {
+                                    console.error(`Failed to subscribe to pool ${pool.address}:`, poolError);
+                                }
+                            }
+                        } else {
+                            console.log(`No pools found for token: ${token}`);
+                        }
+                    } catch (tokenError) {
+                        console.error(`Error processing pools for token ${token}:`, tokenError);
+                    }
+                }
+                
+                console.log(`Successfully established ${subscriptionCount} pool subscriptions (token-based)`);
                 return;
             }
             
+            // Subscribe to each pool from active configurations
             let subscriptionCount = 0;
             
-            for (const token of activeTokens) {
+            for (const pool of configPools) {
                 try {
-                    const pools = await getPoolsForToken(token);
-                    
-                    if (pools.length > 0) {
-                        console.log(`Subscribing to ${pools.length} pools for token: ${token}`);
-                        
-                        for (const pool of pools) {
-                            try {
-                                if (pool.version === 3) {
-                                await this.subscribeToPool(pool.address);
-                                console.log(`Subscribed to pool V3: ${pool.pairName} (${pool.address})`);
-                                subscriptionCount++;
-                                }
-                                if (pool.version === 2) {
-                                    await this.subscribeToPoolV2(pool.address);
-                                    console.log(`Subscribed to pool: ${pool.pairName} (${pool.address})`);
-                                    subscriptionCount++;
-                                }
-                            } catch (poolError) {
-                                console.error(`Failed to subscribe to pool ${pool.address}:`, poolError);
-                            }
-                        }
-                    } else {
-                        console.log(`No pools found for token: ${token}`);
+                    if (pool.version === 3) {
+                        await this.subscribeToPool(pool.address);
+                        console.log(`Subscribed to pool V3: ${pool.pairName || pool.address} (${pool.address})`);
+                        subscriptionCount++;
                     }
-                } catch (tokenError) {
-                    console.error(`Error processing pools for token ${token}:`, tokenError);
+                    if (pool.version === 2) {
+                        await this.subscribeToPoolV2(pool.address);
+                        console.log(`Subscribed to pool V2: ${pool.pairName || pool.address} (${pool.address})`);
+                        subscriptionCount++;
+                    }
+                } catch (poolError) {
+                    console.error(`Failed to subscribe to pool ${pool.address}:`, poolError);
                 }
             }
             
-            console.log(`Successfully established ${subscriptionCount} pool subscriptions`);
+            console.log(`Successfully established ${subscriptionCount} pool subscriptions (config-based)`);
         } catch (error) {
             console.error('Error initializing DB pool subscriptions:', error);
         }
     }
+    
 
     private async subscribeToBuys() {
         try {

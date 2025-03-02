@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import {TokenInfo, PoolDetail} from "../types/types";
 import Web3 from 'web3';
-import { upsertToken, getAllActiveTokens, insertPool, getAllPools } from '../DB/queries';
+import { upsertToken, getAllActiveTokens, insertPool, getAllPools, getPoolsForToken } from '../DB/queries';
 
 
 export const WBNB = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c";
@@ -153,17 +153,19 @@ export class CommonWeb3{
             };
         } catch (error) {
             console.error(`Failed to get token info for ${ca}:`, error);
-            
-            // Return basic placeholder info
-            return {
-                address: ca,
-                name: `Token_${ca.substring(0, 8)}`,
-                symbol: 'TKN',
-                decimals: 18,
-                totalSupply: '0',
-                owner: 'Unknown',
-                poolAddresses: []
-            };
+            // Retry fetching token info with max 10 retries every 10 seconds
+            for (let attempt = 1; attempt <= 10; attempt++) {
+                try {
+                    return await this.getTokenInfo(ca);
+                } catch (retryError) {
+                    console.error(`Retry ${attempt}/10 failed for ${ca}:`, retryError);
+                    if (attempt < 10) {
+                        await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 10 seconds before retrying
+                    }
+                }
+            }
+            console.error(`Failed to get token info for ${ca} after 10 retries`);
+            return  { address: ca, name: 'Unknown', symbol: 'UNKNOWN', decimals: 18, totalSupply: '0', owner: 'Unknown' };
         }
     }
     public async getPoolAddressesV2(ca: string): Promise<string[]> {
@@ -190,6 +192,25 @@ export class CommonWeb3{
     public async getPoolDetailsV2(ca: string): Promise<PoolDetail> {
         try {
             console.log(`Fetching V2 pool details for ${ca}`);
+            
+            // Check if we already have this pool in the database
+            const cachedPools = await getPoolsForToken(ca);
+            const cachedPool = cachedPools.find(pool => pool.address.toLowerCase() === ca.toLowerCase());
+            
+            if (cachedPool) {
+                console.log(`Found cached V2 pool details for ${ca}`);
+                return {
+                    address: cachedPool.address,
+                    token0_address: cachedPool.token0,
+                    token1_address: cachedPool.token1,
+                    fee: cachedPool.fee,
+                    tickSpacing: cachedPool.tickSpacing,
+                    version: cachedPool.version
+                };
+            }
+            
+            // If not in database, proceed with blockchain calls
+            console.log(`No cached data found, fetching V2 pool details from blockchain for ${ca}`);
             
             // Check if the contract address is valid
             const code = await this.web3.eth.getCode(ca);
@@ -261,7 +282,26 @@ export class CommonWeb3{
 
     public async getPoolDetails(ca: string): Promise<PoolDetail> {
         try {
-            console.log(`Fetching pool details for ${ca}`);
+            console.log(`Fetching V3 pool details for ${ca}`);
+            
+            // Check if we already have this pool in the database
+            const cachedPools = await getPoolsForToken(ca);
+            const cachedPool = cachedPools.find(pool => pool.address.toLowerCase() === ca.toLowerCase());
+            
+            if (cachedPool) {
+                console.log(`Found cached V3 pool details for ${ca}`);
+                return {
+                    address: cachedPool.address,
+                    token0_address: cachedPool.token0,
+                    token1_address: cachedPool.token1,
+                    fee: cachedPool.fee,
+                    tickSpacing: cachedPool.tickSpacing,
+                    version: cachedPool.version
+                };
+            }
+            
+            // If not in database, proceed with blockchain calls
+            console.log(`No cached data found, fetching V3 pool details from blockchain for ${ca}`);
             
             // Check if the contract address is valid
             const code = await this.web3.eth.getCode(ca);

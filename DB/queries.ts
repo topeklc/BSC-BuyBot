@@ -3,6 +3,10 @@ import { Group, PoolDetail} from "../types/types";
 import {WBNB} from '../CommonWeb3/common';
 interface PoolInfo {
     address: string;
+    token0: string;
+    token1: string;
+    fee: number;
+    tickSpacing: number;
     pairName: string;
     version: number;
 }
@@ -259,7 +263,6 @@ export const updateGroupConfig = async (groupId: bigint, field: string, value: a
         await postgres.query(query, [value, groupId]);
     } catch (err) {
         console.error('Error updating group config:', err);
-        throw err;
     }
 }
 
@@ -280,7 +283,7 @@ export const getPoolsForToken = async (tokenAddress: string): Promise<PoolInfo[]
     try {
         const query = `
         SELECT 
-            p.address, p.version,
+            p.address, p.version, p.token0_address, p.token1_address, p.fee, .p.tick_spacing,
                     CASE 
                         WHEN p.token0_address = $1 THEN CONCAT(t1.symbol, '/', t2.symbol)
                         ELSE CONCAT(t2.symbol, '/', t1.symbol)
@@ -294,6 +297,10 @@ export const getPoolsForToken = async (tokenAddress: string): Promise<PoolInfo[]
         const result = await postgres.query(query, [tokenAddress]);
         return result.rows.map((row: any) => ({
             address: row.address,
+            token0:row.token0_address,
+            token1:row.token1_address,
+            fee: row.fee,
+            tickSpacing: row.tick_spacing,
             pairName: row.pair_name,
             version: row.version
         }));
@@ -352,8 +359,9 @@ export const insertPool = async (pool: PoolDetail): Promise<void> => {
     } catch (err) {
         console.error('Error inserting pool:', err);
         // Provide more detailed error info
-        if (err.code) {
-            console.error(`SQL Error Code: ${err.code}, Detail: ${err.detail || 'No detail'}`);
+        const error = err as any;
+        if (error.code) {
+            console.error(`SQL Error Code: ${error.code}, Detail: ${error.detail || 'No detail'}`);
         }
         throw err; // Re-throw to ensure calling code knows about the error
     }

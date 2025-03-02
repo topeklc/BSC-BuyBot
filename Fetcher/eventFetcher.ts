@@ -4,7 +4,7 @@ import fs from 'fs';
 import { WebSocketServer } from './websocketServer';
 import {CommonWeb3, WBNB} from '../CommonWeb3/common';
 import {getAllActiveTokens, getPrice, insertPool, getPoolsForToken} from '../DB/queries';
-import {TokenInfo, BuyMessageData, PoolDetail} from '../types';
+import { TokenInfo, BuyMessageData, PoolDetail } from '../types';
 import Web3WsProvider from 'web3-providers-ws'
 import { PoolSwapHandler } from './poolSwapHandler';
 
@@ -473,13 +473,30 @@ class EventFetcher {
     private async handleNewPoolEvent(decodedLog: any) {
         const pools = await this.commonWeb3.getPoolAddresses(String(decodedLog.base));
         pools.forEach(async (poolAddress) => {
-            const poolDetails = await this.commonWeb3.getPoolDetails(poolAddress);
-            await insertPool(poolDetails);
-            await this.subscribeToPool(poolAddress);
-            // TODO add here sending to websocket and then to telegram info about bonding
-        }
-        )
+            let attempts = 0;
+            const maxAttempts = 10;
+            const retryDelay = 5000; // 5 seconds
+
+            while (attempts < maxAttempts) {
+                try {
+                    const poolDetails = await this.commonWeb3.getPoolDetails(poolAddress);
+                    await insertPool(poolDetails);
+                    await this.subscribeToPool(poolAddress);
+                    // TODO add here sending to websocket and then to telegram info about bonding
+                    break; // Exit loop if successful
+                } catch (error) {
+                    attempts++;
+                    console.error(`Error processing new pool event (attempt ${attempts}):`, error);
+                    if (attempts < maxAttempts) {
+                        await new Promise(resolve => setTimeout(resolve, retryDelay));
+                    } else {
+                        console.error('Max retry attempts reached for processing new pool event');
+                    }
+                }
+            }
+        });
     }
+
     private async subscribeToPoolV2(poolAddress: string) {
         try {
             console.log(`Subscribing to V2 pool: ${poolAddress}`);
@@ -601,7 +618,7 @@ class EventFetcher {
                 topics: [swapV3Topic] // Swap event
             });
             
-            // Store subscription ID for better tracking
+
             console.log(`Subscribed to pool ${poolAddress} with ID: ${poolSub.id}`);
             
             // Track this subscription

@@ -112,7 +112,6 @@ const shareChatHandler = async (bot: TelegramBot, msg: any) => {
                 }
 
                 await insertDefaultGroupConfig(sharedChat, tokenAddress);
-                await updateGroupConfigPools(sharedChat, 'all');
                 await sendConfigMenu(bot, sharedChat, userId, tokenInfo);
                 await commonWeb3.updatePools(tokenAddress);
                 return "Token configuration completed successfully";
@@ -172,7 +171,7 @@ async function handlePoolsConfig(bot: TelegramBot, chatId: number, messageId: nu
         [{ text: `${isAllSelected ? '❌ Deselect All' : '✅ Select All'}`, callback_data: 'config_pools_select_all' }],
         ...pools.map(pool => ({
             text: `${selectedtokenAddresss.includes(pool.address) ? '✅' : '❌'} ${pool.pairName}`,
-            callback_data: `config_pool_toogle:${pool.address}`
+            callback_data: `config_pool_toggle:${pool.address}`
         })).reduce((acc, curr, i) => {
             if (i % 2 === 0) acc.push([curr]);
             else acc[acc.length - 1].push(curr);
@@ -557,7 +556,6 @@ const configCallbackHandler = async (bot: TelegramBot, callbackQuery: TelegramBo
                         }
                         await commonWeb3.updatePools(tokenAddress);
                         await updateGroupConfig(currentGroupId, 'address', tokenAddress);
-                        await updateGroupConfigPools(currentGroupId, 'all');
                         
                         await sendConfigMenu(bot, currentGroupId, userId, tokenInfo, callbackQuery.message?.message_id || 0,);
                         

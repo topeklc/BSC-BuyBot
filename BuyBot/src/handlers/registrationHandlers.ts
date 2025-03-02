@@ -171,7 +171,7 @@ async function handlePoolsConfig(bot: TelegramBot, chatId: number, messageId: nu
         [{ text: `${isAllSelected ? '❌ Deselect All' : '✅ Select All'}`, callback_data: 'config_pools_select_all' }],
         ...pools.map(pool => ({
             text: `${selectedtokenAddresss.includes(pool.address) ? '✅' : '❌'} ${pool.pairName}`,
-            callback_data: `config_pool_toggle:${pool.address}`
+            callback_data: `config_pool_toggle:${pool.address}`  // Standardize on this format
         })).reduce((acc, curr, i) => {
             if (i % 2 === 0) acc.push([curr]);
             else acc[acc.length - 1].push(curr);
@@ -261,85 +261,56 @@ const configCallbackHandler = async (bot: TelegramBot, callbackQuery: TelegramBo
             const toggledPool = action.split(':')[1];
             
             try {
+                console.log(`Toggling pool: ${toggledPool}`);
                 const poolConfig = await getGroupConfig(currentGroupId);
                 if (!poolConfig) {
                     await bot.sendMessage(userId, 'Error: Could not find group configuration');
                     return;
                 }
 
-                const currentPools = poolConfig.pools || [];
-                const isSelected = currentPools.some((p: string) => {
-                    try {
-                        const parsed = JSON.parse(p);
-                        return parsed.tokenAddress === toggledPool;
-                    } catch {
-                        return false;
-                    }
-                });
+                // Get current pools and normalize to array
+                const currentPools = Array.isArray(poolConfig.pools) ? poolConfig.pools : [];
+                console.log("Current pools before toggle:", currentPools);
                 
+                // Check if the pool is already selected
+                const isSelected = currentPools.includes(toggledPool) || 
+                                   currentPools.some((p: string) => {
+                                       try {
+                                           const parsed = JSON.parse(p);
+                                           return parsed.address === toggledPool || 
+                                                  parsed.tokenAddress === toggledPool;
+                                       } catch {
+                                           return false;
+                                       }
+                                   });
+                
+                // Simple add/remove logic using only addresses
                 let updatedPools;
                 if (isSelected) {
+                    // Remove the pool by filtering out its address
                     updatedPools = currentPools.filter((p: any) => {
+                        if (p === toggledPool) return false;
+                        
                         try {
                             const parsed = JSON.parse(p);
-                            return parsed.tokenAddress !== toggledPool;
+                            return parsed.address !== toggledPool && 
+                                   parsed.tokenAddress !== toggledPool;
                         } catch {
                             return true;
                         }
                     });
                 } else {
-                    const allPools = await getPoolsForToken(poolConfig.address);
-                    const poolToAdd = allPools.find(p => p.address === toggledPool);
-                    if (poolToAdd) {
-                        updatedPools = [...currentPools, JSON.stringify(poolToAdd)];
-                    } else {
-                        updatedPools = currentPools;
-                    }
+                    // Add just the address instead of the full object
+                    updatedPools = [...currentPools, toggledPool];
                 }
                 
+                // Update the database with the simplified pool list
                 await updateGroupConfig(currentGroupId, 'pools', updatedPools);
                 
-                const allPoolsForUpdate = await getPoolsForToken(poolConfig.address);
-                const selectAllButton = {
-                    text: 'Select All Pools 🔄',
-                    callback_data: 'config_pools_all'
-                };
-
-                const poolButtonsList = allPoolsForUpdate.map(pool => ({
-                    text: `${updatedPools.some((p: string) => {
-                        try {
-                            const parsed = JSON.parse(p);
-                            return parsed.tokenAddress === pool.address;
-                        } catch {
-                            return false;
-                        }
-                    }) ? '🟢' : '🔴'} ${pool.pairName}`,
-                    callback_data: `config_pool_toggle:${pool.address}`
-                }));
-
-                // Create pairs of buttons for two columns
-                const poolButtons = [];
-                for (let i = 0; i < poolButtonsList.length; i += 2) {
-                    const row = [poolButtonsList[i]];
-                    if (i + 1 < poolButtonsList.length) {
-                        row.push(poolButtonsList[i + 1]);
-                    }
-                    poolButtons.push(row);
-                }
-
-                // Add select all button as a separate row at the top
-                poolButtons.unshift([selectAllButton]);
+                // Refresh the entire pool config interface
+                const config = await getGroupConfig(currentGroupId);
+                await handlePoolsConfig(bot, userId, messageId, config);
                 
-                await bot.editMessageText(
-                    'Select pools to monitor (green = selected):',
-                    {
-                        chat_id: userId,
-                        message_id: callbackQuery.message.message_id,
-                        reply_markup: {
-                            inline_keyboard: poolButtons
-                        }
-                    }
-                );
             } catch (err) {
                 logError('ConfigCallbackHandler', err as Error, { context: 'pool_toggle' });
                 await bot.sendMessage(userId, 'Error updating pools configuration');

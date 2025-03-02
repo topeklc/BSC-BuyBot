@@ -285,8 +285,8 @@ export const getPoolsForToken = async (tokenAddress: string): Promise<PoolInfo[]
         SELECT 
             p.address, p.version, p.token0_address, p.token1_address, p.fee, p.tick_spacing,
                     CASE 
-                        WHEN p.token0_address = $1 THEN CONCAT(t1.symbol, '/', t2.symbol)
-                        ELSE CONCAT(t2.symbol, '/', t1.symbol)
+                        WHEN p.token0_address = $1 THEN CONCAT(t1.symbol, '/', t2.symbol, '/', p.version)
+                        ELSE CONCAT(t2.symbol, '/', t1.symbol, '/', p.version)
                     END as pair_name
         FROM pools p
         JOIN tokens t1 ON p.token0_address = t1.address
@@ -500,8 +500,8 @@ export const getPrice = async (contractAddress: string=WBNB) => {
             const query = `
                 SELECT DISTINCT p.*,
                     CASE 
-                        WHEN p.token0_address = t1.address THEN CONCAT(t1.symbol, '/', t2.symbol)
-                        ELSE CONCAT(t2.symbol, '/', t1.symbol)
+                        WHEN p.token0_address = t1.address THEN CONCAT(t1.symbol, '/', t2.symbol, '/', p.version)
+                        ELSE CONCAT(t2.symbol, '/', t1.symbol, '/', p.version)
                     END as pair_name
                 FROM group_configs gc
                 JOIN jsonb_array_elements_text(gc.pools::jsonb) as pool_address ON true

@@ -28,12 +28,33 @@ const socialValidations: Record<keyof Socials, SocialValidation> = {
     telegram: {
         isValid: (url: string) => {
             if (isUnsetCommand(url)) return true;
-            return /^(https?:\/\/)?(www\.)?(t\.me|telegram\.me)\/[a-zA-Z0-9_@+]+$/.test(url);
+            
+            // Accept usernames starting with @
+            if (url.startsWith('@') && url.length > 1) {
+                return /^@[a-zA-Z0-9_]{2,}$/.test(url);
+            }
+            
+            // Accept t.me and telegram.me URLs
+            return /^(https?:\/\/)?(www\.)?(t\.me|telegram\.me)\/[a-zA-Z0-9_]+$/.test(url);
         },
         normalize: (url: string) => {
             if (isUnsetCommand(url)) return null;
-            if (url.startsWith('@')) return `https://t.me/${url.substring(1)}`;
-            return normalizeUrl(url.startsWith('www.') ? `https://${url}` : url);
+            
+            // Keep @ format as is
+            if (url.startsWith('@')) return url;
+            
+            // Extract username from t.me URL
+            const match = url.match(/(?:t\.me|telegram\.me)\/([a-zA-Z0-9_]+)/i);
+            if (match) {
+                return `@${match[1]}`;
+            }
+            
+            // If it's just a username without @, add it
+            if (/^[a-zA-Z0-9_]+$/.test(url)) {
+                return `@${url}`;
+            }
+            
+            return url;
         },
         example: '@groupname or t.me/groupname or t.me/invitecode (or type "del"/"unset" to remove)'
     },

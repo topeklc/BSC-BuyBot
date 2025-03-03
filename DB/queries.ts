@@ -208,8 +208,15 @@ export const insertDefaultGroupConfig = async (groupId: bigint, address: string)
         // First check if a config already exists
         const existingConfig = await getGroupConfig(groupId);
         if (existingConfig) {
-            console.log('Group config already exists');
-        } else {
+            const updateQuery = `
+            UPDATE group_configs 
+            SET pools = $1, socials = $2, emoji = '🚀', min_amount = 0, updated_at = CURRENT_TIMESTAMP 
+            WHERE group_id = $3
+            `;
+            const poolsJson = pools.map(p => JSON.stringify(p));
+            await postgres.query(updateQuery, [poolsJson, defaultSocials, groupId]);
+            console.log('Group config updated with default values');
+        }  else {
             // If doesn't exist, insert new
             const query = `
                 INSERT INTO group_configs (

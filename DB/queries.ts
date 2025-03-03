@@ -211,11 +211,11 @@ export const insertDefaultGroupConfig = async (groupId: bigint, address: string)
         if (existingConfig) {
             const updateQuery = `
             UPDATE group_configs 
-            SET pools = $1, socials = $2, emoji = '🚀', min_amount = 0, updated_at = CURRENT_TIMESTAMP 
-            WHERE group_id = $3
+            SET address = $1, pools = $2, socials = $3, emoji = '🚀', min_amount = 0, updated_at = CURRENT_TIMESTAMP 
+            WHERE group_id = $4
             `;
             
-            await postgres.query(updateQuery, [poolsArray, defaultSocials, groupId]);
+            await postgres.query(updateQuery, [address, poolsArray, defaultSocials, groupId]);
             console.log('Group config updated with default values');
         }  else {
             // If doesn't exist, insert new

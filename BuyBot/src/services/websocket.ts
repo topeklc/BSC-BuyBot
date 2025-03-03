@@ -400,14 +400,22 @@ export class WebSocketClient {
                     continue;
                 }
 
-                // Check if the pool address matches the configured pools
-                // OR if the pair address matches the token address (for Springboard purchases)
-                if (!config.pools.includes(buyMessage.pairAddress) && buyMessage.pairAddress !== buyMessage.gotToken.address) {
+                // Updated condition to handle both pairAddress and poolAddress
+                const isSpringboardPurchase = buyMessage.dex === 'Springboard' && 
+                    buyMessage.poolAddress === buyMessage.gotToken.address;
+                
+                // Check if any address matches the configured pools or token address for Springboard
+                const isPairAddressMatching = config.pools.includes(buyMessage.pairAddress);
+                const isPoolAddressMatching = config.pools.includes(buyMessage.poolAddress);
+                
+                if (!isPairAddressMatching && !isPoolAddressMatching && !isSpringboardPurchase) {
                     logInfo('Buy Message', 'Skipping group due to pool address mismatch', { 
                         groupId: config.group_id, 
-                        poolAddress: buyMessage.pairAddress,
+                        poolAddress: buyMessage.poolAddress,
+                        pairAddress: buyMessage.pairAddress,
                         tokenAddress: buyMessage.gotToken.address,
-                        configuredPools: config.pools
+                        configuredPools: config.pools,
+                        isSpringboard: buyMessage.dex === 'Springboard'
                     });
                     continue;
                 }

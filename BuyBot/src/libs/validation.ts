@@ -40,21 +40,24 @@ const socialValidations: Record<keyof Socials, SocialValidation> = {
         normalize: (url: string) => {
             if (isUnsetCommand(url)) return null;
             
-            // Keep @ format as is
-            if (url.startsWith('@')) return url;
+            // If it starts with @, convert to t.me format
+            if (url.startsWith('@')) {
+                return `https://t.me/${url.substring(1)}`;
+            }
             
-            // Extract username from t.me URL
+            // Extract username from t.me or telegram.me URL
             const match = url.match(/(?:t\.me|telegram\.me)\/([a-zA-Z0-9_]+)/i);
             if (match) {
-                return `@${match[1]}`;
+                return `https://t.me/${match[1]}`;
             }
             
-            // If it's just a username without @, add it
+            // If it's just a username without @, convert to t.me format
             if (/^[a-zA-Z0-9_]+$/.test(url)) {
-                return `@${url}`;
+                return `https://t.me/${url}`;
             }
             
-            return url;
+            // Apply normal URL normalization for any other format
+            return normalizeUrl(url);
         },
         example: '@groupname or t.me/groupname or t.me/invitecode (or type "del"/"unset" to remove)'
     },

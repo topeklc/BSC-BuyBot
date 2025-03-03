@@ -518,7 +518,7 @@ export class CommonWeb3{
      * @param tokenAddress The token address
      * @param newPoolAddresses Array of new pool addresses to add
      */
-    private async updateGroupConfigsWithNewPools(tokenAddress: string, newPoolAddresses: string[]): Promise<void> {
+    public async updateGroupConfigsWithNewPools(tokenAddress: string, newPoolAddresses: string[]): Promise<void> {
         try {
             if (newPoolAddresses.length === 0) return;
             

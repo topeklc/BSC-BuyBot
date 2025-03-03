@@ -589,7 +589,8 @@ class EventFetcher {
         });
     }
     private async handleNewPoolEvent(decodedLog: any) {
-        const pools = await this.commonWeb3.getPoolAddresses(String(decodedLog.base));
+        const tokenCA = String(decodedLog.base)
+        const pools = await this.commonWeb3.getPoolAddresses(tokenCA);
         pools.forEach(async (poolAddress) => {
             let attempts = 0;
             const maxAttempts = 10;
@@ -600,6 +601,7 @@ class EventFetcher {
                     const poolDetails = await this.commonWeb3.getPoolDetails(poolAddress);
                     await insertPool(poolDetails);
                     await this.subscribeToPool(poolAddress);
+                    await this.commonWeb3.updateGroupConfigsWithNewPools(tokenCA, [poolDetails.address]);
                     // TODO add here sending to websocket and then to telegram info about bonding
                     break; // Exit loop if successful
                 } catch (error) {

@@ -489,50 +489,66 @@ export const getPrice = async (contractAddress: string=WBNB) => {
     }
 }
 
-    /**
-     * Retrieve all pools from active group configurations
-     */
-    export const getAllConfigPools = async (): Promise<any[]> => {
-        try {
-            const { postgres } = await import('../DB/dbConnector');
-            
-            // Query to get all pools from active group configurations
-            const query = `
-                SELECT DISTINCT p.*,
-                    CASE 
-                        WHEN p.token0_address = t1.address THEN CONCAT(t1.symbol, '/', t2.symbol, '/', p.version)
-                        ELSE CONCAT(t2.symbol, '/', t1.symbol, '/', p.version)
-                    END as pair_name
+/**
+ * Retrieve all pools from active group configurations
+ */
+export const getAllConfigPools = async (): Promise<any[]> => {
+    try {
+        console.log('Fetching pools from active configurations');
+        
+        // Modified query to handle pools as a string array rather than trying to cast to jsonb
+        const query = `
+            WITH pool_addresses AS (
+                -- Unnest the pools array to get individual pool addresses
+                SELECT DISTINCT gc.group_id, unnest(gc.pools) AS pool_address
                 FROM group_configs gc
-                JOIN jsonb_array_elements_text(gc.pools::jsonb) as pool_address ON true
-                JOIN pools p ON (
-                    -- Handle both plain addresses and JSON objects with address field
-                    (p.address = pool_address::text) OR 
-                    (p.address = (pool_address::jsonb->>'address')::text) OR
-                    (p.address = (pool_address::jsonb->>'tokenAddress')::text)
-                )
-                LEFT JOIN tokens t1 ON p.token0_address = t1.address
-                LEFT JOIN tokens t2 ON p.token1_address = t2.address
                 WHERE gc.active = true
-            `;
-            
-            console.log('Executing query to get all pools from active configurations');
-            
-            const result = await postgres.query(query);
-            
-            console.log(`Retrieved ${result.rows.length} pools from active configurations`);
-            
-            return result.rows.map(row => ({
-                address: row.address,
-                token0: row.token0_address,
-                token1: row.token1_address,
-                fee: row.fee,
-                tickSpacing: row.tick_spacing,
-                pairName: row.pair_name || `Unknown_${row.address.substring(0, 6)}`,
-                version: row.version
-            }));
-        } catch (error) {
-            console.error('Error getting pools from active configurations:', error);
-            return [];
-        }
+            )
+            SELECT DISTINCT p.*,
+                CASE 
+                    WHEN p.token0_address = t1.address THEN CONCAT(t1.symbol, '/', t2.symbol, '/', p.version)
+                    ELSE CONCAT(t2.symbol, '/', t1.symbol, '/', p.version)
+                END as pair_name
+            FROM pool_addresses pa
+            JOIN pools p ON (
+                -- Handle both plain addresses and JSON objects
+                p.address = pa.pool_address OR
+                p.address = (
+                    CASE 
+                        WHEN pa.pool_address ~ '^\\{.*\\}$' THEN 
+                            (CAST(pa.pool_address AS jsonb)->>'address')::text
+                        ELSE pa.pool_address
+                    END
+                ) OR 
+                p.address = (
+                    CASE 
+                        WHEN pa.pool_address ~ '^\\{.*\\}$' THEN 
+                            (CAST(pa.pool_address AS jsonb)->>'tokenAddress')::text
+                        ELSE pa.pool_address
+                    END
+                )
+            )
+            LEFT JOIN tokens t1 ON p.token0_address = t1.address
+            LEFT JOIN tokens t2 ON p.token1_address = t2.address
+        `;
+        
+        console.log('Executing query to get all pools from active configurations');
+        
+        const result = await postgres.query(query);
+        
+        console.log(`Retrieved ${result.rows.length} pools from active configurations`);
+        
+        return result.rows.map(row => ({
+            address: row.address,
+            token0: row.token0_address,
+            token1: row.token1_address,
+            fee: row.fee,
+            tickSpacing: row.tick_spacing,
+            pairName: row.pair_name || `Unknown_${row.address.substring(0, 6)}`,
+            version: row.version
+        }));
+    } catch (error) {
+        console.error('Error getting pools from active configurations:', error);
+        return [];
     }
+}

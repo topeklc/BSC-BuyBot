@@ -388,6 +388,7 @@ export class WebSocketClient {
         // Send message to each configured group
         for (const config of groupsToSend) {
             try {
+                console.log('Group config:', config.group_id, buyMessage.gotToken.address, config.pools, buyMessage.pairAddress);
                 // Skip if notifications are disabled or amount is below minimum
                 if (!config.active || (config.min_amount > 0 && config.min_amount > spentAmountDollars)) {
                     logInfo('Buy Message', 'Skipping group', { 
@@ -398,8 +399,20 @@ export class WebSocketClient {
                     });
                     continue;
                 }
+
+                // Check if the pool address matches the configured pools
+                // OR if the pair address matches the token address (for Springboard purchases)
+                if (!config.pools.includes(buyMessage.pairAddress) && buyMessage.pairAddress !== buyMessage.gotToken.address) {
+                    logInfo('Buy Message', 'Skipping group due to pool address mismatch', { 
+                        groupId: config.group_id, 
+                        poolAddress: buyMessage.pairAddress,
+                        tokenAddress: buyMessage.gotToken.address,
+                        configuredPools: config.pools
+                    });
+                    continue;
+                }
                 
-                let message = formatBuyMessage(buyMessage, {emoji:config.emoji, socials: config.socials}, rank);
+                let message = formatBuyMessage(buyMessage, {emoji: config.emoji, socials: config.socials}, rank);
                 logInfo('Buy Message', 'Sending buy message', { message });
                 
                 let buyUrl = `https://pancakeswap.finance/?outputCurrency=${buyMessage.gotToken.address}`;

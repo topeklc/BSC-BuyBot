@@ -2,9 +2,10 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 import eventFetcher from './eventFetcher';
+import {PriceFetcher} from './priceFetcher';
 
 const fetchEvents = async () => {
-    // Create websocket server for communicating with BuyBot
+    new PriceFetcher().start();
 
     
     // Create event fetcher and pass websocket server for event broadcasting

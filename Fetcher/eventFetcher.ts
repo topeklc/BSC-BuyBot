@@ -1060,6 +1060,7 @@ class EventFetcher {
     }
 
     private async getBuyMessageData(decodedLog: any): Promise<BuyMessageData> {
+        // handle Springboard buys.
         const tokenInfo = await this.commonWeb3.getTokenInfo(String(decodedLog.token));
         const WBNBPrice = (await getPrice()).price_usd //get price of WBNB in usd
         const spentAmount = (Number(decodedLog.cost) + Number(decodedLog.fee)) / 10**18
@@ -1067,7 +1068,7 @@ class EventFetcher {
         const price = spentDollars / (Number(decodedLog.amount) / 10**18)
         const holderIncrease = '0' //get holder increase
         const marketcap = (Number(tokenInfo.totalSupply) / 10**18) * price //get marketcap TODO check burned tokens
-        const dex = 'springboard' 
+        const dex = 'Springboard' 
         const buy: BuyMessageData = {
             spentToken: {address: WBNB, name: 'Wrapped BNB', symbol: 'WBNB', amount: spentAmount, priceUSD: WBNBPrice, pricePairToken: Number(decodedLog.price) / 10**18},
             gotToken: {amount: Number(decodedLog.amount) / 10**18, address: tokenInfo.address, name: tokenInfo.name, symbol: tokenInfo.symbol, priceUSD: price, pricePairToken: Number(decodedLog.price) / 10**18},
@@ -1076,6 +1077,7 @@ class EventFetcher {
             spentDollars: spentDollars,
             holderIncrease: holderIncrease,
             marketcap: marketcap,
+            poolAddress: tokenInfo.address,
             dex: dex
 
         }

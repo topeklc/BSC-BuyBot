@@ -152,47 +152,115 @@ async function handleConfigUpdate(
 }
 
 async function handlePoolsConfig(bot: TelegramBot, chatId: number, messageId: number | undefined, config: GroupConfig) {
-    const pools = await getPoolsForToken(config.address);
-    const selectedPools = Array.isArray(config.pools) ? config.pools : [];
-    
-    // Parse selected pools to get address
-    const selectedtokenAddresss = selectedPools.map((pool: any) => {
-        try {
-            return JSON.parse(pool).tokenAddress;
-        } catch {
-            return pool;
+    try {
+        console.log("Starting handlePoolsConfig with config:", config);
+        const pools = await getPoolsForToken(config.address);
+        console.log(`Found ${pools.length} pools for token ${config.address}`);
+        
+        if (pools.length === 0) {
+            const message = 'No pools found for this token.';
+            if (messageId) {
+                await bot.editMessageText(message, {
+                    chat_id: chatId,
+                    message_id: messageId,
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '⬅️ Back to Config', callback_data: 'config_back_to_config' }]
+                        ]
+                    }
+                });
+            } else {
+                await bot.sendMessage(chatId, message, {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '⬅️ Back to Config', callback_data: 'config_back_to_config' }]
+                        ]
+                    }
+                });
+            }
+            return;
         }
-    });
-
-    const isAllSelected = pools.length === selectedtokenAddresss.length && 
-        pools.every(pool => selectedtokenAddresss.includes(pool.address));
-
-    const keyboard: TelegramBot.InlineKeyboardButton[][] = [
-        [{ text: `${isAllSelected ? '❌ Deselect All' : '✅ Select All'}`, callback_data: 'config_pools_select_all' }],
-        ...pools.map(pool => ({
-            text: `${selectedtokenAddresss.includes(pool.address) ? '✅' : '❌'} ${pool.pairName}`,
-            callback_data: `config_pool_toggle:${pool.address}`  // Standardize on this format
-        })).reduce((acc, curr, i) => {
-            if (i % 2 === 0) acc.push([curr]);
-            else acc[acc.length - 1].push(curr);
-            return acc;
-        }, [] as TelegramBot.InlineKeyboardButton[][]),
-        [{ text: '⬅️ Back to Config', callback_data: 'config_back_to_config' }]
-    ];
-
-    const message = 'Select pools to monitor:\n\n' +
-        `Selected: ${selectedtokenAddresss.length}/${pools.length}`;
-
-    if (messageId) {
-        await bot.editMessageText(message, {
-            chat_id: chatId,
-            message_id: messageId,
-            reply_markup: { inline_keyboard: keyboard }
+        
+        // Normalize selected pools for better comparison
+        const selectedPools = Array.isArray(config.pools) ? config.pools : [];
+        console.log("Raw selected pools:", selectedPools);
+        
+        // Improved parsing to handle various formats
+        const selectedPoolAddresses = selectedPools.map((pool: any) => {
+            if (typeof pool === 'string') {
+                try {
+                    // Try to parse as JSON string first
+                    const parsed = JSON.parse(pool);
+                    return parsed.address || parsed.tokenAddress || pool;
+                } catch {
+                    // If it's not JSON, use as is
+                    return pool;
+                }
+            }
+            return pool;
         });
-    } else {
-        await bot.sendMessage(chatId, message, {
-            reply_markup: { inline_keyboard: keyboard }
-        });
+        
+        console.log("Normalized selected pool addresses:", selectedPoolAddresses);
+
+        const isAllSelected = pools.length === selectedPoolAddresses.length && 
+            pools.every(pool => selectedPoolAddresses.includes(pool.address));
+
+        console.log(`isAllSelected=${isAllSelected}, selected=${selectedPoolAddresses.length}, total=${pools.length}`);
+
+        const keyboard: TelegramBot.InlineKeyboardButton[][] = [
+            [{ text: `${isAllSelected ? '❌ Deselect All' : '✅ Select All'}`, callback_data: 'config_pools_select_all' }],
+            ...pools.map(pool => ({
+                text: `${selectedPoolAddresses.includes(pool.address) ? '✅' : '❌'} ${pool.pairName || pool.address.substring(0, 8)}`,
+                callback_data: `config_pool_toggle:${pool.address}`
+            })).reduce((acc, curr, i) => {
+                if (i % 2 === 0) acc.push([curr]);
+                else acc[acc.length - 1].push(curr);
+                return acc;
+            }, [] as TelegramBot.InlineKeyboardButton[][]),
+            [{ text: '⬅️ Back to Config', callback_data: 'config_back_to_config' }]
+        ];
+
+        const message = 'Select pools to monitor:\n\n' +
+            `Selected: ${selectedPoolAddresses.length}/${pools.length}`;
+
+        if (messageId) {
+            await bot.editMessageText(message, {
+                chat_id: chatId,
+                message_id: messageId,
+                reply_markup: { inline_keyboard: keyboard }
+            });
+        } else {
+            await bot.sendMessage(chatId, message, {
+                reply_markup: { inline_keyboard: keyboard }
+            });
+        }
+    } catch (error) {
+        console.error("Error in handlePoolsConfig:", error);
+        const errorMessage = "Failed to load pools. Please try again.";
+        
+        try {
+            if (messageId) {
+                await bot.editMessageText(errorMessage, {
+                    chat_id: chatId,
+                    message_id: messageId,
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '⬅️ Back to Config', callback_data: 'config_back_to_config' }]
+                        ]
+                    }
+                });
+            } else {
+                await bot.sendMessage(chatId, errorMessage, {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '⬅️ Back to Config', callback_data: 'config_back_to_config' }]
+                        ]
+                    }
+                });
+            }
+        } catch (err) {
+            console.error("Failed to send error message:", err);
+        }
     }
 }
 
@@ -268,48 +336,53 @@ const configCallbackHandler = async (bot: TelegramBot, callbackQuery: TelegramBo
                     return;
                 }
 
-                // Get current pools and normalize to array
+                // Normalize pools array for consistent handling
                 const currentPools = Array.isArray(poolConfig.pools) ? poolConfig.pools : [];
                 console.log("Current pools before toggle:", currentPools);
                 
-                // Check if the pool is already selected
-                const isSelected = currentPools.includes(toggledPool) || 
-                                   currentPools.some((p: string) => {
-                                       try {
-                                           const parsed = JSON.parse(p);
-                                           return parsed.address === toggledPool || 
-                                                  parsed.tokenAddress === toggledPool;
-                                       } catch {
-                                           return false;
-                                       }
-                                   });
+                // Check if pool is already selected - improved detection
+                const isSelected = currentPools.some(p => {
+                    if (p === toggledPool) return true;
+                    
+                    try {
+                        const parsed = JSON.parse(p);
+                        return parsed.address === toggledPool || parsed.tokenAddress === toggledPool;
+                    } catch {
+                        return false;
+                    }
+                });
                 
-                // Simple add/remove logic using only addresses
+                console.log(`Pool ${toggledPool} is currently ${isSelected ? 'selected' : 'not selected'}`);
+                
                 let updatedPools;
                 if (isSelected) {
-                    // Remove the pool by filtering out its address
-                    updatedPools = currentPools.filter((p: any) => {
+                    // Remove pool by filtering
+                    updatedPools = currentPools.filter(p => {
                         if (p === toggledPool) return false;
                         
                         try {
                             const parsed = JSON.parse(p);
-                            return parsed.address !== toggledPool && 
-                                   parsed.tokenAddress !== toggledPool;
+                            return parsed.address !== toggledPool && parsed.tokenAddress !== toggledPool;
                         } catch {
                             return true;
                         }
                     });
                 } else {
-                    // Add just the address instead of the full object
+                    // Always store just the address for simplicity
                     updatedPools = [...currentPools, toggledPool];
                 }
                 
-                // Update the database with the simplified pool list
+                console.log(`Updating pools: ${currentPools.length} -> ${updatedPools.length}`);
+                
+                // Update database
                 await updateGroupConfig(currentGroupId, 'pools', updatedPools);
                 
-                // Refresh the entire pool config interface
-                const config = await getGroupConfig(currentGroupId);
-                await handlePoolsConfig(bot, userId, messageId, config);
+                // Get fresh config
+                const updatedConfig = await getGroupConfig(currentGroupId);
+                console.log("Updated config:", updatedConfig);
+                
+                // Refresh UI
+                await handlePoolsConfig(bot, userId, messageId, updatedConfig);
                 
             } catch (err) {
                 logError('ConfigCallbackHandler', err as Error, { context: 'pool_toggle' });

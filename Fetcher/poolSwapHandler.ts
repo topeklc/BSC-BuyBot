@@ -138,7 +138,7 @@ export class PoolSwapHandler {
                 spentDollars: spentDollars,
                 holderIncrease: '0',
                 marketcap: marketcap,
-                dex: 'UniswapV3'
+                dex: 'PancakeSwapV3'
             };
             
             console.log('Created buy message data:', buyMessage);
@@ -298,7 +298,7 @@ export class PoolSwapHandler {
                 spentDollars: spentDollars,
                 holderIncrease: '0', // Placeholder, would need additional data to calculate
                 marketcap: marketcap,
-                dex: 'PancakeSwap' // Indicate this is from PancakeSwap V2
+                dex: 'PancakeSwapV2' // Indicate this is from PancakeSwap V2
             };
             
             console.log('Created buy message data:', buyMessage);

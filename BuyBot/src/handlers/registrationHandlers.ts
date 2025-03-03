@@ -598,8 +598,8 @@ const configCallbackHandler = async (bot: TelegramBot, callbackQuery: TelegramBo
                         if (!tokenInfo) {
                             throw new Error('Could not fetch token information. Please check the Contract Address.');
                         }
+                        await insertDefaultGroupConfig(currentGroupId, tokenAddress);
                         await commonWeb3.updatePools(tokenAddress);
-                        await updateGroupConfig(currentGroupId, 'address', tokenAddress);
                         
                         await sendConfigMenu(bot, currentGroupId, userId, tokenInfo, callbackQuery.message?.message_id || 0,);
                         

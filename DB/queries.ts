@@ -199,6 +199,7 @@ export const insertDefaultGroupConfig = async (groupId: bigint, address: string)
         }
 
         const pools = await getPoolsForToken(address);
+        const poolsArray = pools.map(p => p.address);
         const defaultSocials = JSON.stringify({
             website: null,
             telegram: null,
@@ -213,8 +214,8 @@ export const insertDefaultGroupConfig = async (groupId: bigint, address: string)
             SET pools = $1, socials = $2, emoji = '🚀', min_amount = 0, updated_at = CURRENT_TIMESTAMP 
             WHERE group_id = $3
             `;
-            const poolsJson = pools.map(p => JSON.stringify(p));
-            await postgres.query(updateQuery, [poolsJson, defaultSocials, groupId]);
+            
+            await postgres.query(updateQuery, [poolsArray, defaultSocials, groupId]);
             console.log('Group config updated with default values');
         }  else {
             // If doesn't exist, insert new
@@ -228,8 +229,7 @@ export const insertDefaultGroupConfig = async (groupId: bigint, address: string)
                     min_amount
                 ) VALUES ($1, $2, $3, $4, '🚀', 0)
             `;
-            const poolsJson = pools.map(p => JSON.stringify(p));
-            await postgres.query(query, [groupId, address, poolsJson, defaultSocials]);
+            await postgres.query(query, [groupId, address, poolsArray, defaultSocials]);
         }
     } catch (err) {
         console.error('Error inserting/updating default group config:', err);

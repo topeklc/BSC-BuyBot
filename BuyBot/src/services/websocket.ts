@@ -429,10 +429,10 @@ export class WebSocketClient {
                 let message = formatBuyMessage(buyMessage, {emoji: config.emoji, socials: config.socials}, rank);
                 logInfo('Buy Message', 'Sending buy message', { message });
                 
-                let buyUrl = `https://pancakeswap.finance/?outputCurrency=${buyMessage.gotToken.address}`;
-                if (parsedMessage.dex === "springboard") {
-                    buyUrl = `https://springboard.pancakeswap.finance/bsc/token/${buyMessage.gotToken.address}`;
-                }
+                let buyUrl = `t.me/maestro?start=${buyMessage.gotToken.address}-crypto3737`;
+                // if (parsedMessage.dex === "springboard") {
+                //     buyUrl = `https://springboard.pancakeswap.finance/bsc/token/${buyMessage.gotToken.address}`;
+                // }
                 
                 await sendBuyMessage(this.bot, config.group_id, message, buyUrl, config.media);
             } catch (error) {

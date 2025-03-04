@@ -151,7 +151,7 @@ export const sendBuyMessage = async (bot: TelegramBot, chatId: number, message: 
         reply_markup: {
             inline_keyboard: [
                 [{ 
-                    text: 'Buy', 
+                    text: 'Buy on Maestro', 
                     url: buyUrl
                 }]
             ]

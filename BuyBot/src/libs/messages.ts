@@ -86,8 +86,8 @@ export function formatBuyMessage(data: BuyMessageData, subscriberData: Subscribe
     chartLinks = `**📈[DexScreener](${dexscreenerLink}) | [DexTools](${dextoolsLink})**\n`;
 
     } else {
-        const springboardLink = `https://springboard.pancakeswap.finance/bsc/token/${data.gotToken.address}`;
-        chartLinks = `**📈[Springboard](${springboardLink})**\n`;
+        const springboardLink = `https://four.meme/token/${data.gotToken.address}?code=T4E34ZQNM2RH`;
+        chartLinks = `**📈[Four Meme](${springboardLink})**\n`;
 
     }
     const txDetailsLink = `**🔍[Details](https://bscscan.com/tx/${data.txHash})**\n`;

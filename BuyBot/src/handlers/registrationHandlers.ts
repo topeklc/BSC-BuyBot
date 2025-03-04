@@ -78,7 +78,7 @@ const shareChatHandler = async (bot: TelegramBot, msg: any) => {
         console.log(msg.chat_shared)
         logInfo('ShareChatHandler', 'Processing shared chat', { userId, sharedChat });
         const chatName = chat.title || chat.username || 'Private'
-        await saveUser(userId, msg.from.username);
+        await saveUser(userId, msg.from.username || 'Unknown');
         await updateUserCol(userId, "currently_setting", sharedChat);
         await upsertGroup(sharedChat, chatName, msg.chat_shared.link);
         await upsertGroupUser(sharedChat, userId);

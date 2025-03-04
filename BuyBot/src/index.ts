@@ -41,7 +41,7 @@ bot.onText(/\/start/, async (msg: any) => {
     try {
         if (msg.chat.type !== 'private') return;
         const chatId = msg.chat.id;
-        await saveUser(chatId, msg.from.username);
+        await saveUser(chatId, msg.from.username || 'Unknown');
         logInfo('StartCommand', 'User started the bot', { chatId });
         const opts = {
             reply_markup: {

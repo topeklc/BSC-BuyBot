@@ -6,6 +6,7 @@ import { formatBuyMessage } from '../libs/messages';
 import { logError, logInfo } from '../libs/logger';
 import { WBNB } from '../../../CommonWeb3/common';
 
+
 export class WebSocketClient {
     private ws: WebSocket | null = null;
     private bot: TelegramBot;
@@ -388,10 +389,11 @@ export class WebSocketClient {
         
         // Check if the bought token is one we want to track
         const activeTokens = await getAllActiveTokens();
-        if (buyMessage.gotToken.name === WBNB || !activeTokens.includes(buyMessage.gotToken.name)) {
-            console.log(`Skipping: Token ${buyMessage.gotToken.name} not in active tracking list or bnb`);
+        if (buyMessage.gotToken.address === WBNB || !activeTokens.includes(buyMessage.gotToken.address)) {
+            console.log(`Skipping: Token ${buyMessage.gotToken.address} not in active tracking ${activeTokens} list or it's bnb`);
             return;
         }
+        
         // Send message to each configured group
         for (const config of groupsToSend) {
             try {

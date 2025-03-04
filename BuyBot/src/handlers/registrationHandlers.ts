@@ -401,21 +401,12 @@ const configCallbackHandler = async (bot: TelegramBot, callbackQuery: TelegramBo
                 const pools = await getPoolsForToken(config.address);
                 const selectedPools = Array.isArray(config.pools) ? config.pools : [];
                 
-                // Parse selected pools to get tokenAddresss
-                const selectedtokenAddresss = selectedPools.map((pool: any) => {
-                    try {
-                        return JSON.parse(pool).tokenAddress;
-                    } catch {
-                        return pool;
-                    }
-                });
-                
                 // Check if all pools are currently selected
-                const isAllSelected = pools.length === selectedtokenAddresss.length && 
-                    pools.every(pool => selectedtokenAddresss.includes(pool.address));
+                const isAllSelected = pools.length === selectedPools.length && 
+                    pools.every(pool => selectedPools.includes(pool.address));
                 
                 // Toggle between all selected and none selected
-                const newPools = isAllSelected ? [] : pools.map(p => JSON.stringify(p));
+                const newPools = isAllSelected ? [] : pools.map(p => p.address);
                 
                 await updateGroupConfig(currentGroupId, 'pools', newPools);
                 

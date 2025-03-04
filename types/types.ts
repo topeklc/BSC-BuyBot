@@ -77,6 +77,7 @@ export interface BuyMessageData {
     holderIncrease: string;
     holderWallet: string;
     marketcap: number;
+    txHash: string;
     dex: string;
 }
 

@@ -1,5 +1,5 @@
 import { formatTokenAmount, formatDollarAmount } from './numberFormatting';
-import { NewPoolMessageData } from '../../../types';
+import { NewPoolMessageData, BuyMessageData } from '../../../types';
 import { trendingNumbersMap } from './trending';
 // TODO move interfaces
 export interface TokenData {
@@ -12,16 +12,6 @@ export interface TokenData {
     totalSupply?: number;
 }
 
-export interface BuyMessageData {
-    spentToken: TokenData;
-    gotToken: TokenData;
-    pairAddress: string;
-    spentDollars: number;
-    holderIncrease: string;
-    holderWallet: string;
-    marketcap: number;
-    dex: string;
-}
 
 export interface Socials {
     website: string | null;
@@ -100,7 +90,7 @@ export function formatBuyMessage(data: BuyMessageData, subscriberData: Subscribe
         chartLinks = `**📈[Springboard](${springboardLink})**\n`;
 
     }
-    const tokenDetailsLink = `**🔍[Details](https://bscscan.com/address/${data.gotToken.address})**\n`;
+    const txDetailsLink = `**🔍[Details](https://bscscan.com/tx/${data.txHash})**\n`;
     const tokenName = subscriberData.socials.telegram ? `[${data.gotToken.name}](${subscriberData.socials.telegram})` : data.gotToken.name;
     const emojiDenominator = 20
     const emojis = subscriberData.emoji.repeat(Math.min(Math.floor(data.spentDollars) / emojiDenominator | 1, 250));
@@ -120,7 +110,7 @@ export function formatBuyMessage(data: BuyMessageData, subscriberData: Subscribe
         `**💵Price: $${formatTokenAmount(data.gotToken.priceUSD)}**\n`,
         holderIncrease,
         `**📊Marketcap: $${formatDollarAmount(data.marketcap, false)}**\n\n`,
-        tokenDetailsLink,
+        txDetailsLink,
         holderWallet,
         chartLinks,
         socials,

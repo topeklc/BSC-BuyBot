@@ -1,6 +1,6 @@
 import { BuyMessageData } from '../types/types';
 import { CommonWeb3, WBNB } from '../CommonWeb3/common';
-import { getPrice, getTokenInfoFromDB } from '../DB/queries';
+import { getPrice, getTokenInfoFromDB, getAllActiveTokens } from '../DB/queries';
 
 /**
  * Processes swap events from Uniswap V3 style pools and converts them to BuyMessageData
@@ -27,7 +27,7 @@ export class PoolSwapHandler {
         tick: string;
         token0Address: string;
         token1Address: string;
-    }): Promise<BuyMessageData | null> {
+    }, txHash: string): Promise<BuyMessageData | null> {
         try {
             console.log('Processing swap event:', data);
             console.log('Raw amount0 type:', typeof data.amount0, 'value:', data.amount0);
@@ -45,22 +45,29 @@ export class PoolSwapHandler {
             let boughtAmount: number;
             let soldAmount: number;
             
-            if (amount0 > 0 && amount1 < 0) {
-                // Token0 was bought with Token1
+            if (amount0 < 0 && amount1 > 0) {
+                // Token0 was bought (received by the pool) and Token1 was sold (sent by the pool)
                 boughtTokenAddress = data.token0Address;
                 soldTokenAddress = data.token1Address;
-                boughtAmount = amount0;
-                soldAmount = Math.abs(amount1); // Convert negative to positive
+                boughtAmount = Math.abs(amount0); // Convert negative to positive
+                soldAmount = amount1;
                 console.log(`Buy direction: Bought ${boughtTokenAddress} with ${soldTokenAddress}`);
-            } else if (amount0 < 0 && amount1 > 0) {
-                // Token1 was bought with Token0
+            } else if (amount0 > 0 && amount1 < 0) {
+                // Token1 was bought (received by the pool) and Token0 was sold (sent by the pool)
                 boughtTokenAddress = data.token1Address;
                 soldTokenAddress = data.token0Address;
-                boughtAmount = amount1;
-                soldAmount = Math.abs(amount0); // Convert negative to positive
+                boughtAmount = Math.abs(amount1); // Convert negative to positive
+                soldAmount = amount0;
                 console.log(`Buy direction: Bought ${boughtTokenAddress} with ${soldTokenAddress}`);
             } else {
                 console.log('Not a standard buy/sell swap (maybe add/remove liquidity):', { amount0, amount1 });
+                return null;
+            }
+            
+            // Check if the bought token is one we want to track
+            const activeTokens = await getAllActiveTokens();
+            if (!activeTokens.includes(boughtTokenAddress)) {
+                console.log(`Skipping: Token ${boughtTokenAddress} not in active tracking list`);
                 return null;
             }
             
@@ -138,7 +145,8 @@ export class PoolSwapHandler {
                 spentDollars: spentDollars,
                 holderIncrease: '0',
                 marketcap: marketcap,
-                dex: 'PancakeSwapV3'
+                dex: 'PancakeSwapV3',
+                txHash: txHash
             };
             
             console.log('Created buy message data:', buyMessage);
@@ -152,7 +160,7 @@ export class PoolSwapHandler {
     /**
      * Process a PancakeSwap V2 swap event and convert it to BuyMessageData format
      */
-    public async processSwapEventV2(poolAddress: string, data: any): Promise<BuyMessageData | null> {
+    public async processSwapEventV2(poolAddress: string, data: any, txHash: string): Promise<BuyMessageData | null> {
         try {
             console.log('Processing V2 swap event data:', data);
             
@@ -180,20 +188,20 @@ export class PoolSwapHandler {
             let boughtAmount: number;
             let soldAmount: number;
             
-            if (amount0In > 0 && amount1Out > 0) {
-                // Token0 was sold to buy Token1
-                soldTokenAddress = data.token0Address;
-                boughtTokenAddress = data.token1Address;
-                soldAmount = amount0In;
-                boughtAmount = amount1Out;
-                console.log(`V2 buy direction: Sold ${soldTokenAddress} (token0) for ${boughtTokenAddress} (token1)`);
-            } else if (amount1In > 0 && amount0Out > 0) {
-                // Token1 was sold to buy Token0
-                soldTokenAddress = data.token1Address;
+            if (amount0Out > 0 && amount1In > 0) {
+                // Token0 was bought (received by the pool) and Token1 was sold (sent by the pool)
                 boughtTokenAddress = data.token0Address;
-                soldAmount = amount1In;
+                soldTokenAddress = data.token1Address;
                 boughtAmount = amount0Out;
-                console.log(`V2 buy direction: Sold ${soldTokenAddress} (token1) for ${boughtTokenAddress} (token0)`);
+                soldAmount = amount1In;
+                console.log(`V2 buy direction: Bought ${boughtTokenAddress} (token0) with ${soldTokenAddress} (token1)`);
+            } else if (amount1Out > 0 && amount0In > 0) {
+                // Token1 was bought (received by the pool) and Token0 was sold (sent by the pool)
+                boughtTokenAddress = data.token1Address;
+                soldTokenAddress = data.token0Address;
+                boughtAmount = amount1Out;
+                soldAmount = amount0In;
+                console.log(`V2 buy direction: Bought ${boughtTokenAddress} (token1) with ${soldTokenAddress} (token0)`);
             } else {
                 console.log(`V2 swap doesn't look like a standard buy. Amounts: in0=${amount0In}, in1=${amount1In}, out0=${amount0Out}, out1=${amount1Out}`);
                 
@@ -216,6 +224,13 @@ export class PoolSwapHandler {
                     console.log('Could not determine V2 swap direction, may be add/remove liquidity');
                     return null;
                 }
+            }
+            
+            // Check if the bought token is one we want to track
+            const activeTokens = await getAllActiveTokens();
+            if (!activeTokens.includes(boughtTokenAddress)) {
+                console.log(`Skipping: Token ${boughtTokenAddress} not in active tracking list`);
+                return null;
             }
             
             // Get token information for both tokens
@@ -298,7 +313,8 @@ export class PoolSwapHandler {
                 spentDollars: spentDollars,
                 holderIncrease: '0', // Placeholder, would need additional data to calculate
                 marketcap: marketcap,
-                dex: 'PancakeSwapV2' // Indicate this is from PancakeSwap V2
+                dex: 'PancakeSwapV2', // Indicate this is from PancakeSwap V2
+                txHash: txHash
             };
             
             console.log('Created buy message data:', buyMessage);

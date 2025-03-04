@@ -535,8 +535,8 @@ class EventFetcher {
                         console.log('Token is not active:', decodedLog.token);
                         return;
                     }
-                    
-                    const buy = await this.getBuyMessageData(decodedLog);
+                    const txHash = String(log.transactionHash);
+                    const buy = await this.getBuyMessageData(decodedLog, txHash);
                     
                     // Check for duplicates before broadcasting
                     if (!this.isDuplicateMessage(buy)) {
@@ -644,7 +644,7 @@ class EventFetcher {
                     console.log(`V2 pool event received for ${poolAddress}:`, log);
                     
                     // Get the transaction hash from the log for deduplication
-                    const txHash = log.transactionHash;
+                    const txHash = String(log.transactionHash);
                     console.log(`V2 Transaction hash: ${txHash}`);
                     
                     try {
@@ -671,7 +671,8 @@ class EventFetcher {
                         console.log(`Processing V2 swap data:`, swapData);
                         const buyMessage = await this.poolSwapHandler.processSwapEventV2(
                             poolAddress,
-                            swapData
+                            swapData,
+                            txHash
                         );
                         
                         if (buyMessage) {
@@ -749,7 +750,7 @@ class EventFetcher {
                     console.log(`Pool event received for ${poolAddress}:`, log);
                     
                     // Get the transaction hash from the log for deduplication
-                    const txHash = log.transactionHash;
+                    const txHash = String(log.transactionHash);
                     console.log(`Transaction hash: ${txHash}`);
                     
                     // Get pool details to know token0 and token1
@@ -772,7 +773,8 @@ class EventFetcher {
                     // Process the swap event
                     const buyMessage = await this.poolSwapHandler.processSwapEvent(
                         poolAddress,
-                        swapData
+                        swapData,
+                        txHash
                     );
                     
                     if (buyMessage) {
@@ -1061,7 +1063,7 @@ class EventFetcher {
         }
     }
 
-    private async getBuyMessageData(decodedLog: any): Promise<BuyMessageData> {
+    private async getBuyMessageData(decodedLog: any, txHash: string): Promise<BuyMessageData> {
         // handle Springboard buys.
         const tokenInfo = await this.commonWeb3.getTokenInfo(String(decodedLog.token));
         const WBNBPrice = (await getPrice()).price_usd //get price of WBNB in usd
@@ -1080,7 +1082,8 @@ class EventFetcher {
             holderIncrease: holderIncrease,
             marketcap: marketcap,
             poolAddress: tokenInfo.address,
-            dex: dex
+            dex: dex,
+            txHash: txHash
 
         }
         return buy;

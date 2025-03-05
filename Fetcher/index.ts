@@ -4,10 +4,22 @@ dotenv.config();
 import eventFetcher from './eventFetcher';
 import {PriceFetcher} from './priceFetcher';
 
+// Global error handlers
+process.on('uncaughtException', (err) => {
+    console.error('Uncaught Exception:', err);
+    // Optionally, you can restart the process or perform other recovery actions
+    // process.exit(1); // Uncomment to exit the process
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+    // Optionally, you can restart the process or perform other recovery actions
+    // process.exit(1); // Uncomment to exit the process
+});
+
 const fetchEvents = async () => {
     new PriceFetcher().start();
 
-    
     // Create event fetcher and pass websocket server for event broadcasting
     const fetcher = new eventFetcher();
     

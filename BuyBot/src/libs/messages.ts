@@ -84,11 +84,12 @@ export function formatBuyMessage(data: BuyMessageData, subscriberData: Subscribe
     const dexscreenerLink = `https://dexscreener.com/bsc/${data.gotToken.address}`;
     const dextoolsLink = `https://www.dextools.io/app/en/bsc/pair-explorer/${data.pairAddress}`;
     chartLinks = `**📈[DexScreener](${dexscreenerLink}) | [DexTools](${dextoolsLink})**\n`;
+    const isSpringboard = false;
 
     } else {
         const springboardLink = `https://four.meme/token/${data.gotToken.address}?code=T4E34ZQNM2RH`;
         chartLinks = `**📈[Four Meme](${springboardLink})**\n`;
-
+        const isSpringboard = false;
     }
     const txDetailsLink = `**🔍[Details](https://bscscan.com/tx/${data.txHash})**\n`;
     const tokenName = subscriberData.socials.telegram ? `[${data.gotToken.name}](${subscriberData.socials.telegram})` : data.gotToken.name;

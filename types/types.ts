@@ -79,7 +79,7 @@ export interface BuyMessageData {
     marketcap: number;
     txHash: string;
     dex: string;
-    bondingStatus: number;
+    bondingStatus: number | undefined;
 }
 
 

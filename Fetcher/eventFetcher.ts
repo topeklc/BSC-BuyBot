@@ -1083,7 +1083,8 @@ class EventFetcher {
             marketcap: marketcap,
             poolAddress: tokenInfo.address,
             dex: dex,
-            txHash: txHash
+            txHash: txHash,
+            bondingStatus: Number(decodedLog.funds)
 
         }
         return buy;

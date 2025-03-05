@@ -41,7 +41,8 @@ export const getFakeBuyMessage = (gotToken: TokenData, pairAddress: string): Buy
         holderIncrease: 'New Holder!',
         holderWallet: '5dcn7-ic2md-acdb6-6a4j6-jmw4m-zb75p-5emge-bngjv-x5znn-wfhbl-5ae', //blockchain pill address
         marketcap: 100000000000,
-        dex: 'PancakeSwap'
+        dex: 'PancakeSwap',
+        bondingStatus: 10 * 10**18,
     }
 }
 
@@ -84,13 +85,12 @@ export function formatBuyMessage(data: BuyMessageData, subscriberData: Subscribe
     const dexscreenerLink = `https://dexscreener.com/bsc/${data.gotToken.address}`;
     const dextoolsLink = `https://www.dextools.io/app/en/bsc/pair-explorer/${data.pairAddress}`;
     chartLinks = `**📈[DexScreener](${dexscreenerLink}) | [DexTools](${dextoolsLink})**\n`;
-    const isSpringboard = false;
 
     } else {
         const springboardLink = `https://four.meme/token/${data.gotToken.address}?code=T4E34ZQNM2RH`;
         chartLinks = `**📈[Four Meme](${springboardLink})**\n`;
-        const isSpringboard = false;
     }
+    const bondingStatus = data.bondingStatus ? `**🔗 Bonding Status ${(data.bondingStatus / 10**18).toFixed(2)} BNB / 24.00 BNB** \n\n${generateProgressBar(data.bondingStatus)}**\n\n` : '';
     const txDetailsLink = `**🔍[Details](https://bscscan.com/tx/${data.txHash})**\n`;
     const tokenName = subscriberData.socials.telegram ? `[${data.gotToken.name}](${subscriberData.socials.telegram})` : data.gotToken.name;
     const emojiDenominator = 20
@@ -114,9 +114,21 @@ export function formatBuyMessage(data: BuyMessageData, subscriberData: Subscribe
         txDetailsLink,
         holderWallet,
         chartLinks,
+        bondingStatus,
         socials,
-        trending
 
     ].join('');
 }
 
+function generateProgressBar(currentAmount: number): string {
+    const maxAmount = 24 * 10**18;
+    const progressPercentage = (currentAmount / maxAmount) * 100;
+    const maxSquares = 10;
+    const filledSquares = Math.min(Math.floor(progressPercentage / 10), maxSquares);
+    const unfilledSquares = maxSquares - filledSquares;
+
+    const filledPart = '🟩'.repeat(filledSquares);
+    const unfilledPart = '🟥'.repeat(unfilledSquares);
+
+    return `${filledPart}${unfilledPart}`;
+}

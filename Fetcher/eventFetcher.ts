@@ -57,7 +57,7 @@ class EventFetcher {
     private providerFailures: Record<number, number> = {}; // Track failures per provider
     private connectionVerified: boolean = false;
     private connectionVerificationTimeout: NodeJS.Timeout | null = null;
-    private checkSubscriptionsCount = 0;
+    
     constructor() {
         this.ws = new WebSocketServer();
         this.initProvider();
@@ -434,21 +434,11 @@ class EventFetcher {
         try {
             console.log(`Checking ${this.subscriptions.length} subscriptions...`);
             
-            // Check if provider is connected by making a simple request
-            try {
-                const isHealthy = await this.web3.eth.net.isListening();
-                if (isHealthy) {
-                    console.log('Provider is connected', isHealthy);
-                } else {
-
-                    console.log('Provider is not connected', isHealthy);
-                    this.handleDisconnect();
-                    this.checkSubscriptionsCount = 0;
-                    return;
-                }
-            } catch (error) {
-                console.error('Error checking provider connection:', error);
-                return
+            // Check if provider is connected
+            if (!this.provider.connected) {
+                console.log('Provider disconnected, reconnecting...');
+                this.handleDisconnect();
+                return;
             }
             
             // Don't try to resubscribe if we're in the middle of reconnecting
@@ -456,13 +446,7 @@ class EventFetcher {
                 console.log('Currently reconnecting, skipping subscription check');
                 return;
             }
-            this.checkSubscriptionsCount ++;
-            if (this.checkSubscriptionsCount > 5) {
-                console.log()
-                this.checkSubscriptionsCount = 0;
-                this.handleDisconnect();
-                return;
-            }
+            
             // Get all pools from active configurations to determine what we should be subscribed to
             const activeConfigPools = await getAllConfigPools();
             const activePoolAddresses = new Set(activeConfigPools.map(pool => pool.address.toLowerCase()));
@@ -493,10 +477,10 @@ class EventFetcher {
                     
                     // Filter for pool subscriptions (V2 and V3)
                     const poolSubscriptions = this.subscriptions.filter(sub => {
-                        if (!sub.args || !sub.args.address || !sub.args.topics || !sub.args.topics[0]) {
+                        if (!sub.options || !sub.options.address || !sub.options.topics || !sub.options.topics[0]) {
                             return false;
                         }
-                        const topic = sub.args.topics[0];
+                        const topic = sub.options.topics[0];
                         return topic === swapV2Topic || topic === swapV3Topic;
                     });
                     
@@ -504,7 +488,7 @@ class EventFetcher {
                     
                     // Identify pool subscriptions that should be removed
                     const poolsToUnsubscribe = poolSubscriptions.filter(sub => {
-                        const address = sub.args.address.toLowerCase();
+                        const address = sub.options.address.toLowerCase();
                         return !activePoolAddresses.has(address);
                     });
                     
@@ -513,8 +497,8 @@ class EventFetcher {
                         console.log(`Unsubscribing from ${poolsToUnsubscribe.length} pools no longer in active configurations`);
                         
                         for (const sub of poolsToUnsubscribe) {
-                            const address = sub.args.address.toLowerCase();
-                            const topic = sub.args.topics[0];
+                            const address = sub.options.address.toLowerCase();
+                            const topic = sub.options.topics[0];
                             const key = `${address}-${topic}`;
                             
                             try {
@@ -535,7 +519,7 @@ class EventFetcher {
                     
                     // Identify new pools that need subscriptions
                     const currentPoolAddresses = new Set(
-                        poolSubscriptions.map(sub => sub.args.address.toLowerCase())
+                        poolSubscriptions.map(sub => sub.options.address.toLowerCase())
                     );
                     
                     const poolsToAdd = activeConfigPools.filter(pool => 
@@ -593,11 +577,9 @@ class EventFetcher {
         // Reorganize our subscription tracking
         for (const sub of this.subscriptions) {
             // Extract the key info if available
-            console.log('Checking subscription:', sub.id || 'unknown');
-            console.log('Subscription', sub);
-            if (sub.args && sub.args.address && sub.args.topics && sub.args.topics[0]) {
-                const address = sub.args.address.toLowerCase();
-                const topic = sub.args.topics[0];
+            if (sub.options && sub.options.address && sub.options.topics && sub.options.topics[0]) {
+                const address = sub.options.address.toLowerCase();
+                const topic = sub.options.topics[0];
                 const key = `${address}-${topic}`;
                 
                 if (uniqueKeys.has(key)) {

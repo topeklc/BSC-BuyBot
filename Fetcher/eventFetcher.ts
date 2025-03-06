@@ -57,7 +57,7 @@ class EventFetcher {
     private providerFailures: Record<number, number> = {}; // Track failures per provider
     private connectionVerified: boolean = false;
     private connectionVerificationTimeout: NodeJS.Timeout | null = null;
-    
+    private checkSubscriptionsCount = 0;
     constructor() {
         this.ws = new WebSocketServer();
         this.initProvider();
@@ -435,7 +435,10 @@ class EventFetcher {
             console.log(`Checking ${this.subscriptions.length} subscriptions...`);
             
             // Check if provider is connected
-            if (!this.provider.connected) {
+            this.checkSubscriptionsCount++;
+            const isHealthy = await this.web3.eth.net.isListening();
+            if (!isHealthy || this.checkSubscriptionsCount > 4) {
+                this.checkSubscriptionsCount = 0;
                 console.log('Provider disconnected, reconnecting...');
                 this.handleDisconnect();
                 return;
@@ -477,10 +480,10 @@ class EventFetcher {
                     
                     // Filter for pool subscriptions (V2 and V3)
                     const poolSubscriptions = this.subscriptions.filter(sub => {
-                        if (!sub.options || !sub.options.address || !sub.options.topics || !sub.options.topics[0]) {
+                        if (!sub.args || !sub.args.address || !sub.args.topics || !sub.args.topics[0]) {
                             return false;
                         }
-                        const topic = sub.options.topics[0];
+                        const topic = sub.args.topics[0];
                         return topic === swapV2Topic || topic === swapV3Topic;
                     });
                     
@@ -488,7 +491,7 @@ class EventFetcher {
                     
                     // Identify pool subscriptions that should be removed
                     const poolsToUnsubscribe = poolSubscriptions.filter(sub => {
-                        const address = sub.options.address.toLowerCase();
+                        const address = sub.args.address.toLowerCase();
                         return !activePoolAddresses.has(address);
                     });
                     
@@ -497,8 +500,8 @@ class EventFetcher {
                         console.log(`Unsubscribing from ${poolsToUnsubscribe.length} pools no longer in active configurations`);
                         
                         for (const sub of poolsToUnsubscribe) {
-                            const address = sub.options.address.toLowerCase();
-                            const topic = sub.options.topics[0];
+                            const address = sub.args.address.toLowerCase();
+                            const topic = sub.args.topics[0];
                             const key = `${address}-${topic}`;
                             
                             try {
@@ -519,7 +522,7 @@ class EventFetcher {
                     
                     // Identify new pools that need subscriptions
                     const currentPoolAddresses = new Set(
-                        poolSubscriptions.map(sub => sub.options.address.toLowerCase())
+                        poolSubscriptions.map(sub => sub.args.address.toLowerCase())
                     );
                     
                     const poolsToAdd = activeConfigPools.filter(pool => 
@@ -577,9 +580,9 @@ class EventFetcher {
         // Reorganize our subscription tracking
         for (const sub of this.subscriptions) {
             // Extract the key info if available
-            if (sub.options && sub.options.address && sub.options.topics && sub.options.topics[0]) {
-                const address = sub.options.address.toLowerCase();
-                const topic = sub.options.topics[0];
+            if (sub.args && sub.args.address && sub.args.topics && sub.args.topics[0]) {
+                const address = sub.args.address.toLowerCase();
+                const topic = sub.args.topics[0];
                 const key = `${address}-${topic}`;
                 
                 if (uniqueKeys.has(key)) {

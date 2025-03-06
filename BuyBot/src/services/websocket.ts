@@ -2,9 +2,10 @@ import WebSocket from 'ws';
 import TelegramBot from 'node-telegram-bot-api';
 import { getGroupConfigByField, getTrending, getAllActiveTokens } from '../../../DB/queries';
 import { sendBuyMessage } from '../libs/utils';
-import { formatBuyMessage } from '../libs/messages';
+import { formatBuyMessage, formatNewPoolMessage } from '../libs/messages';
 import { logError, logInfo } from '../libs/logger';
 import { WBNB } from '../../../CommonWeb3/common';
+import { log } from 'console';
 
 
 export class WebSocketClient {
@@ -18,7 +19,6 @@ export class WebSocketClient {
     private isConnecting: boolean = false;
     private lastMessageTime: number = Date.now();
     private connectionCheckInterval: NodeJS.Timeout | null = null;
-    
     // Add a message cache to prevent duplicate processing
     private recentMessages: Map<string, number> = new Map();
     private readonly MESSAGE_CACHE_TIMEOUT = 60000; // 60 seconds
@@ -116,6 +116,8 @@ export class WebSocketClient {
                     
                     if (parsedMessage.type === 'NewBuy') {
                         await this.handleBuyMessage(parsedMessage);
+                    } else if (parsedMessage.type === 'NewPool') {
+                        await this.handleNewPoolMessage(parsedMessage);
                     }
                     
                     // Handle other message types as needed
@@ -381,19 +383,17 @@ export class WebSocketClient {
             try {
                 var rank = trendingToken.place;
                 const message = formatBuyMessage(buyMessage, {emoji: '🚀', socials: {website: null, x: null, telegram: null}}, rank);
-                await sendBuyMessage(this.bot, Number(process.env.TRENDING_CHANNEL_ID), message, `https://app.icpswap.com/swap/pro?input=${buyMessage.spentToken.address}&output=${buyMessage.gotToken.address}`);
+                await sendBuyMessage(this.bot, Number(process.env.TRENDING_CHANNEL_ID), message, `t.me/maestro?start=${buyMessage.gotToken.address}-crypto3737`);
             } catch (error) {
                 logError('Failed to send buy message to trending', error as Error);
             }
         }
-        
         // Check if the bought token is one we want to track
         const activeTokens = await getAllActiveTokens();
         if (buyMessage.gotToken.address === WBNB || !activeTokens.includes(buyMessage.gotToken.address)) {
             console.log(`Skipping: Token ${buyMessage.gotToken.address} not in active tracking ${activeTokens} list or it's bnb`);
             return;
         }
-        
         // Send message to each configured group
         for (const config of groupsToSend) {
             try {
@@ -430,14 +430,76 @@ export class WebSocketClient {
                 logInfo('Buy Message', 'Sending buy message', { message });
                 
                 let buyUrl = `t.me/maestro?start=${buyMessage.gotToken.address}-crypto3737`;
-                // if (parsedMessage.dex === "springboard") {
-                //     buyUrl = `https://springboard.pancakeswap.finance/bsc/token/${buyMessage.gotToken.address}`;
-                // }
                 
                 await sendBuyMessage(this.bot, config.group_id, message, buyUrl, config.media);
             } catch (error) {
                 logError('Failed to send buy message to group', error as Error);
             }
+        }
+    }
+
+    /**
+     * Handle new pool messages from the fetcher
+     */
+    private async handleNewPoolMessage(parsedMessage: any): Promise<void> {
+        try {
+            const poolMessage = typeof parsedMessage.message === 'string'
+                ? JSON.parse(parsedMessage.message)
+                : parsedMessage.message;
+                
+            logInfo('NewPool Message', 'Processing new pool message', {
+                tokenName: poolMessage.tokenName,
+                tokenAddress: poolMessage.tokenAddress,
+                poolAddress: poolMessage.poolDetail?.address
+            });
+            
+            if (!poolMessage || !poolMessage.tokenAddress || !poolMessage.poolDetail) {
+                logError('NewPool Message', 'Invalid pool message format');
+                return;
+            }
+            
+            // Get all group configurations that have this token
+            const groupsToSend = await getGroupConfigByField('address', poolMessage.tokenAddress);
+            
+            if (groupsToSend.length === 0) {
+                logInfo('NewPool Message', `No groups configured for token ${poolMessage.tokenAddress}`);
+                return;
+            }
+            
+            // Format the pool message
+            const formattedMessage = formatNewPoolMessage(
+                poolMessage.tokenName,
+                poolMessage.poolDetail
+            );
+            let buyUrl = `t.me/maestro?start=${poolMessage.tokenAddress}-crypto3737`;
+            // Send message to each configured group
+            for (const config of groupsToSend) {
+                try {
+                    // Only send to active groups
+                    if (!config.active) {
+                        continue;
+                    }
+                    
+                    logInfo('NewPool Message', 'Sending new pool message', {
+                        groupId: config.group_id,
+                        tokenName: poolMessage.tokenName
+                    });
+                    
+                    // Use empty string as buttonUrl since this isn't a buy message
+                    await sendBuyMessage(this.bot, config.group_id, formattedMessage, buyUrl, config.media);
+                } catch (error) {
+                    logError('Failed to send new pool message to group', error as Error);
+                }
+            }
+            try {
+                logInfo('NewPool Message', 'Sending new pool message', formattedMessage);
+                await sendBuyMessage(this.bot, -4157351129, formattedMessage, buyUrl);
+            } catch(error) {
+                logError('Failed to send new pool message to trending', error as Error);
+                logInfo('NewPool Message', 'Sending new pool message', formattedMessage);
+            }
+        } catch (error) {
+            logError('Error handling new pool message', error as Error);
         }
     }
 }

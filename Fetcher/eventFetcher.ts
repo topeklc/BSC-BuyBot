@@ -3,7 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import { WebSocketServer } from './websocketServer';
 import {CommonWeb3, WBNB} from '../CommonWeb3/common';
-import {getAllActiveTokens, getPrice, insertPool, getPoolsForToken, getAllConfigPools} from '../DB/queries';
+import {getAllActiveTokens, getPrice, insertPool, getPoolsForToken, getAllConfigPools, getTokenInfoFromDB} from '../DB/queries';
 import { TokenInfo, BuyMessageData, PoolDetail } from '../types';
 import Web3WsProvider from 'web3-providers-ws'
 import { PoolSwapHandler } from './poolSwapHandler';
@@ -12,9 +12,16 @@ const buyTopic = '0x7db52723a3b2cdd6164364b3b766e65e540d7be48ffa89582956d8eaebe6
 const newPoolTopic = '0xc18aa71171b358b706fe3dd345299685ba21a5316c66ffa9e319268b033c44b0';
 const swapV3Topic = '0x19b47279256b2a23a1665c810c8d55a1758940ee09377d4f8d26497a3577dc83'
 const swapV2Topic = '0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822'
+
+// Define an array of RPC providers to use as fallbacks
+const rpcProviders = [
+    process.env.WSS_WEB3_PROVIDER || "",  // Primary provider from environment
+    "wss://bsc-rpc.publicnode.com",       // Fallback provider
+    // Add more fallback providers here
+];
+
 // Update the WebSocket options to better handle reconnection
 const options = {
-    timeout: 60000, // Increase timeout to 60 seconds
     clientConfig: {
         maxReceivedFrameSize: 100000000,
         maxReceivedMessageSize: 100000000,
@@ -23,10 +30,9 @@ const options = {
     },
     // Modify reconnect settings to prevent rapid reconnections
     reconnect: {
-        auto: true,
-        delay: 10000, // Increase delay between reconnection attempts to 10 seconds
-        maxAttempts: 10,
-        onTimeout: false // Don't automatically reconnect on timeout
+        autoReconnect: true,
+        delay: 2000,
+        maxAttempts: 3,
     }
 };
 
@@ -47,12 +53,21 @@ class EventFetcher {
     private recentMessages: Map<string, number> = new Map();
     private readonly MESSAGE_CACHE_TIMEOUT = 60000; // 60 seconds
     private processedTxHashes: Set<string> = new Set();
+    private currentProviderIndex = 0;
+    private providerFailures: Record<number, number> = {}; // Track failures per provider
+    private connectionVerified: boolean = false;
+    private connectionVerificationTimeout: NodeJS.Timeout | null = null;
     
     constructor() {
         this.ws = new WebSocketServer();
         this.initProvider();
         this.fourMemeCA = "0x5c952063c7fc8610ffdb798152d69f0b9550762b";
         this.poolSwapHandler = new PoolSwapHandler();
+        
+        // Initialize failure counts for each provider
+        rpcProviders.forEach((_, index) => {
+            this.providerFailures[index] = 0;
+        });
         
         try {
             // Load the V2 factory ABI
@@ -107,38 +122,162 @@ class EventFetcher {
             } catch (e) {
                 console.log('Error disconnecting from previous provider:', e);
             }
+            // Set to null to ensure garbage collection
+            this.provider = null;
         }
         
-        console.log('Initializing Web3 WebSocket provider...');
-        this.provider = new Web3WsProvider(process.env.WSS_WEB3_PROVIDER || "", options);
+        // Reset connection verification status
+        this.connectionVerified = false;
+        if (this.connectionVerificationTimeout) {
+            clearTimeout(this.connectionVerificationTimeout);
+            this.connectionVerificationTimeout = null;
+        }
         
-        // Set up event handlers with better error handling
-        this.provider.on("connect", () => {
-            console.log("✅ WebSocket provider connected");
+        // Get current provider URL - store it in a local variable to ensure it doesn't change
+        const currentProviderIndex = this.currentProviderIndex;
+        const currentProviderUrl = rpcProviders[currentProviderIndex] || '';
+        
+        console.log(`Initializing Web3 WebSocket provider with ${currentProviderUrl} (provider #${currentProviderIndex + 1}/${rpcProviders.length})`);
+        
+        // Validate provider URL before attempting to connect
+        if (!currentProviderUrl || !currentProviderUrl.startsWith('ws')) {
+            console.error(`Invalid WebSocket URL: ${currentProviderUrl}`);
+            this.providerFailures[currentProviderIndex]++;
+            this.selectNextProvider();
+            
+            // Schedule a retry with the next provider
+            this.reconnectTimeout = setTimeout(() => {
+                console.log('Retrying with next provider due to invalid URL');
+                this.initProvider();
+            }, 2000);
+            return null;
+        }
+        
+        try {
+            // Create provider with the stored URL to avoid URL changing during connection process
+            this.provider = new Web3WsProvider(currentProviderUrl, {}, options.reconnect);
+            
+            // Set up event handlers with better error handling
+            this.provider.on("connect", () => {
+                console.log(`WebSocket provider #${currentProviderIndex + 1} reported connected - verifying...`);
+                
+                // Set up verification timeout - if we don't verify in 5 seconds, consider it failed
+                this.connectionVerificationTimeout = setTimeout(() => {
+                    if (!this.connectionVerified) {
+                        console.error(`Connection verification timeout for provider #${currentProviderIndex + 1}`);
+                        this.providerFailures[currentProviderIndex]++;
+                        this.handleDisconnect();
+                    }
+                }, 5000);
+                
+                // Verify connection by making a simple request
+                this.verifyConnection(currentProviderUrl, currentProviderIndex);
+            });
+            
+            this.provider.on("close", (event) => {
+                console.log(`❌ WebSocket provider #${currentProviderIndex + 1} closed: ${currentProviderUrl}`, event);
+                this.connectionVerified = false; // Ensure we know connection failed
+                
+                // Increment failure count for this provider
+                this.providerFailures[currentProviderIndex]++;
+                this.handleDisconnect();
+            });
+            
+            this.provider.on("error", (error) => {
+                console.error(`⚠️ WebSocket provider #${currentProviderIndex + 1} error: ${currentProviderUrl}`, error);
+                this.connectionVerified = false; // Ensure we know connection failed
+                
+                // Increment failure count for this provider
+                this.providerFailures[currentProviderIndex]++;
+                this.handleDisconnect();
+            });
+            
+            return this.provider;
+        } catch (error) {
+            console.error(`Error creating WebSocket provider with URL ${currentProviderUrl}:`, error);
+            this.providerFailures[currentProviderIndex]++;
+            this.handleDisconnect();
+            return null;
+        }
+    }
+    
+    /**
+     * Verify that the connection is actually working by making a test request
+     */
+    private async verifyConnection(providerUrl: string, providerIndex: number) {
+        try {
+            // Check if this is still the current provider index
+            // This prevents a race condition where we might verify an old provider
+            if (providerIndex !== this.currentProviderIndex) {
+                console.log(`Provider index changed during verification (was: ${providerIndex}, now: ${this.currentProviderIndex})`);
+                return; // Exit without verification if the provider changed
+            }
+            
+            // Create a temporary Web3 instance for verification
+            const tempWeb3 = new Web3(this.provider);
+            
+            // Try to get the current block number
+            const blockNumber = await tempWeb3.eth.getBlockNumber();
+            
+            // If we get here, the connection is working
+            this.connectionVerified = true;
+            
+            // Clear the verification timeout
+            if (this.connectionVerificationTimeout) {
+                clearTimeout(this.connectionVerificationTimeout);
+                this.connectionVerificationTimeout = null;
+            }
+            
+            console.log(`✅ WebSocket provider #${providerIndex + 1} connection verified: ${providerUrl} (current block: ${blockNumber})`);
+            
+            // Reset failure count for this provider on verified connection
+            this.providerFailures[providerIndex] = 0;
             this.isReconnecting = false;
             
             // Initialize Web3 and contract after successful connection
             this.initWeb3();
-        });
-        
-        this.provider.on("close", (event) => {
-            console.log("❌ WebSocket provider closed:", event);
+            
+        } catch (error) {
+            console.error(`❌ WebSocket provider #${providerIndex + 1} connection verification failed:`, error);
+            
+            // Check if this is still the current provider index
+            if (providerIndex !== this.currentProviderIndex) {
+                console.log('Provider changed during verification, ignoring verification failure');
+                return;
+            }
+            
+            this.connectionVerified = false;
+            this.providerFailures[providerIndex]++;
+            
+            // Clear the verification timeout
+            if (this.connectionVerificationTimeout) {
+                clearTimeout(this.connectionVerificationTimeout);
+                this.connectionVerificationTimeout = null;
+            }
+            
             this.handleDisconnect();
-        });
-        
-        this.provider.on("error", (error) => {
-            console.error("⚠️ WebSocket provider error:", error);
-            this.handleDisconnect();
-        });
-        
-        return this.provider;
+        }
     }
     
     private async initWeb3() {
         try {
+            // Don't initialize if connection wasn't verified
+            if (!this.connectionVerified) {
+                console.error('Cannot initialize Web3 with unverified connection');
+                this.handleDisconnect();
+                return;
+            }
+            
             console.log('Initializing Web3...');
             // Create a new Web3 instance with the provider
-            this.web3 = new Web3(this.provider);
+            try {
+                this.web3 = new Web3(this.provider);
+            } catch (error) {
+                console.error('Error creating Web3 instance:', error);
+                this.handleDisconnect();
+                return;
+            }
+            
             
             // Load ABI and create contract instance
             const fourMemeAbi = JSON.parse(
@@ -170,6 +309,12 @@ class EventFetcher {
         if (this.isReconnecting) return;
         this.isReconnecting = true;
         
+        // Clear the verification timeout if it exists
+        if (this.connectionVerificationTimeout) {
+            clearTimeout(this.connectionVerificationTimeout);
+            this.connectionVerificationTimeout = null;
+        }
+        
         console.log('Handling provider disconnect...');
         // Clear subscriptions array - we'll resubscribe after reconnection
         this.subscriptions = [];
@@ -180,11 +325,42 @@ class EventFetcher {
         // Implement exponential backoff for reconnection attempts
         if (this.reconnectTimeout) clearTimeout(this.reconnectTimeout);
         
+        // Check if we should switch to a different provider
+        if (this.providerFailures[this.currentProviderIndex] >= 1) { // After 1 failure, try next provider
+            this.selectNextProvider();
+        }
+        
         this.reconnectTimeout = setTimeout(() => {
             console.log('Attempting to reconnect WebSocket provider...');
             this.initProvider();
             this.reconnectTimeout = null;
-        }, 15000); // Wait 15 seconds before reconnecting
+        }, 5000); // Use a shorter delay (5 seconds) for reconnection
+    }
+    
+    private selectNextProvider() {
+        const previousProvider = this.currentProviderIndex;
+        
+        // Find the provider with the least failures
+        let minFailures = Infinity;
+        let bestProviderIndex = 0;
+        
+        for (let i = 0; i < rpcProviders.length; i++) {
+            const failures = this.providerFailures[i] || 0;
+            if (failures < minFailures && i !== previousProvider) {
+                minFailures = failures;
+                bestProviderIndex = i;
+            }
+        }
+        
+        // If all providers have similar failure counts, just go to the next one
+        if (minFailures === Infinity || (minFailures > 0 && rpcProviders.length > 2)) {
+            bestProviderIndex = (previousProvider + 1) % rpcProviders.length;
+        }
+        
+        this.currentProviderIndex = bestProviderIndex;
+        
+        console.log(`Switching from provider #${previousProvider + 1} to provider #${this.currentProviderIndex + 1} due to connection issues`);
+        console.log(`Provider failure counts: ${JSON.stringify(this.providerFailures)}`);
     }
 
     public async start() {
@@ -214,17 +390,44 @@ class EventFetcher {
     }
     
     private async waitForWeb3() {
-        // Wait for Web3 to be initialized before proceeding
-        let attempts = 0;
-        while (!this.web3 && attempts < 10) {
-            console.log('Waiting for Web3 initialization...');
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            attempts++;
+        console.log('Waiting for Web3 initialization...');
+        
+        const maxTotalAttempts = 12; // Total connection attempts across all providers
+        let totalAttempts = 0;
+        const delayBetweenAttempts = 5000; // 5 seconds
+        
+        // Try to connect until we succeed or exhaust all attempts
+        while (!this.web3 && totalAttempts < maxTotalAttempts) {
+            totalAttempts++;
+            console.log(`Connection attempt ${totalAttempts}/${maxTotalAttempts}...`);
+            
+            // Wait for the current connection attempt to either succeed or fail
+            await new Promise(resolve => setTimeout(resolve, delayBetweenAttempts));
+            
+            // If we don't have a connection and we're not in the reconnecting state,
+            // explicitly try the next provider
+            if (!this.web3 && !this.isReconnecting) {
+                // Select next provider
+                this.selectNextProvider();
+                console.log(`No connection established, trying provider #${this.currentProviderIndex + 1}`);
+                
+                // Reset states to prevent issues
+                this.isReconnecting = false;
+                this.connectionVerified = false;
+                
+                // Initialize the new provider
+                this.initProvider();
+            }
         }
         
+        // Check if we managed to connect to any provider
         if (!this.web3) {
-            throw new Error('Web3 initialization timed out');
+            console.error('Failed to connect to any provider after multiple attempts');
+            throw new Error('Web3 initialization timed out - could not connect to any provider');
         }
+        
+        console.log('Web3 successfully initialized with provider #' + (this.currentProviderIndex + 1));
+        return this.web3;
     }
     
     private async checkSubscriptions() {
@@ -260,6 +463,10 @@ class EventFetcher {
                 await this.subscribeToNewPools();
                 await this.subscribeToBuys();
                 await this.initDBPoolsSubscriptions();
+                console.log('Current subscriptionMap entries:');
+                for (const [key, value] of this.subscriptionMap.entries()) {
+                    console.log(`Key: ${key}, Value: ${value}`);
+                }
             } else {
                 // Check health of existing subscriptions
                 console.log(`Checking health of ${this.subscriptions.length} subscriptions`);
@@ -536,6 +743,7 @@ class EventFetcher {
                         return;
                     }
                     const txHash = String(log.transactionHash);
+
                     const buy = await this.getBuyMessageData(decodedLog, txHash);
                     
                     // Check for duplicates before broadcasting
@@ -589,8 +797,9 @@ class EventFetcher {
         });
     }
     private async handleNewPoolEvent(decodedLog: any) {
-        const tokenCA = String(decodedLog.base)
+        const tokenCA = String(decodedLog.base);
         const pools = await this.commonWeb3.getPoolAddresses(tokenCA);
+        
         pools.forEach(async (poolAddress) => {
             let attempts = 0;
             const maxAttempts = 10;
@@ -602,7 +811,30 @@ class EventFetcher {
                     await insertPool(poolDetails);
                     await this.subscribeToPool(poolAddress);
                     await this.commonWeb3.updateGroupConfigsWithNewPools(tokenCA, [poolDetails.address]);
-                    // TODO add here sending to websocket and then to telegram info about bonding
+                    
+                    // Get token information from database
+                    const tokenInfo = await getTokenInfoFromDB(tokenCA);
+                    if (tokenInfo) {
+                        // Broadcast new pool message with token name and pool details
+                        console.log(`Broadcasting NewPool message for token ${tokenInfo.name}, pool ${poolAddress}`);
+                        this.ws.broadcast('NewPool', {
+                            tokenName: tokenInfo.name,
+                            tokenAddress: tokenCA,
+                            poolDetail: poolDetails
+                        });
+                    } else {
+                        console.log(`Token info not found for ${tokenCA}, getting from blockchain`);
+                        // Fallback to blockchain query if not in DB
+                        const chainTokenInfo = await this.commonWeb3.getTokenInfo(tokenCA);
+                        if (chainTokenInfo) {
+                            this.ws.broadcast('NewPool', {
+                                tokenName: chainTokenInfo.name,
+                                tokenAddress: tokenCA,
+                                poolDetail: poolDetails
+                            });
+                        }
+                    }
+                    
                     break; // Exit loop if successful
                 } catch (error) {
                     attempts++;

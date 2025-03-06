@@ -1,5 +1,5 @@
 import { formatTokenAmount, formatDollarAmount } from './numberFormatting';
-import { NewPoolMessageData, BuyMessageData } from '../../../types';
+import { NewPoolMessageData, BuyMessageData, PoolDetail } from '../../../types';
 import { trendingNumbersMap } from './trending';
 // TODO move interfaces
 export interface TokenData {
@@ -131,4 +131,20 @@ function generateProgressBar(currentAmount: number): string {
     const unfilledPart = '🟥'.repeat(unfilledSquares);
 
     return `${filledPart}${unfilledPart}`;
+}
+
+/**
+ * Formats a message for a new pool created event
+ * @param tokenName The name of the token
+ * @param poolDetail The details of the pool
+ * @returns Formatted message for the new pool notification
+ */
+export function formatNewPoolMessage(tokenName: string, poolDetail: PoolDetail): string {
+    return `**🚨 Bonding reached! New pool for token ${tokenName} has been created! 🚨**\n\n` +
+           `**Pool Address:** [${poolDetail.address}](https://bscscan.com/address/${poolDetail.address})\n` +
+           `**Token0 Address:** [${poolDetail.token0_address}](https://bscscan.com/address/${poolDetail.token0_address})\n` +
+           `**Token1 Address:** [${poolDetail.token1_address}](https://bscscan.com/address/${poolDetail.token1_address})\n` +
+           `**Version:** ${poolDetail.version}\n` +
+           `**Fee:** ${poolDetail.fee}\n` +
+           `**Tick Spacing:** ${poolDetail.tickSpacing}\n`;
 }

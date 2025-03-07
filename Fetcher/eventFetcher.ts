@@ -437,11 +437,18 @@ class EventFetcher {
             
             // Check if provider is connected
             this.checkSubscriptionsCount++;
-            const isHealthy = await this.web3.eth.net.isListening();
-            console.log("Is healthy: ", isHealthy);
-            if (!isHealthy || this.checkSubscriptionsCount > 4) {
-                this.checkSubscriptionsCount = 0;
-                console.log('Provider disconnected, reconnecting...');
+            
+            try {
+                const isHealthy = await this.web3.eth.net.isListening();
+                console.log("Is healthy: ", isHealthy);
+                if (!isHealthy || this.checkSubscriptionsCount > 4) {
+                    this.checkSubscriptionsCount = 0;
+                    console.log('Provider disconnected, reconnecting...');
+                    this.handleDisconnect();
+                    return;
+                }
+            } catch (error) {
+                console.error('Error checking provider connection:', error);
                 this.handleDisconnect();
                 return;
             }

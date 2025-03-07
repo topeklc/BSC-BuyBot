@@ -141,10 +141,5 @@ function generateProgressBar(currentAmount: number): string {
  */
 export function formatNewPoolMessage(tokenName: string, poolDetail: PoolDetail): string {
     return `**🚨 Bonding reached! New pool for token ${tokenName} has been created! 🚨**\n\n` +
-           `**Pool Address:** [${poolDetail.address}](https://bscscan.com/address/${poolDetail.address})\n` +
-           `**Token0 Address:** [${poolDetail.token0_address}](https://bscscan.com/address/${poolDetail.token0_address})\n` +
-           `**Token1 Address:** [${poolDetail.token1_address}](https://bscscan.com/address/${poolDetail.token1_address})\n` +
-           `**Version:** ${poolDetail.version}\n` +
-           `**Fee:** ${poolDetail.fee}\n` +
-           `**Tick Spacing:** ${poolDetail.tickSpacing}\n`;
+           `**Pool Address:** [${poolDetail.address}](https://bscscan.com/address/${poolDetail.address})\n`
 }

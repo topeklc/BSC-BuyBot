@@ -15,6 +15,7 @@ const swapV2Topic = '0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840
 
 // Define an array of RPC providers to use as fallbacks
 const rpcProviders = [
+    "wss://rpc.ankr.com/bsc/ws/76932a0c09d0b6ff0405586fdb63e1316b4bddc62345b3eb9dd86822c82753e7",
     process.env.WSS_WEB3_PROVIDER || "",  // Primary provider from environment
     "wss://bsc-rpc.publicnode.com",       // Fallback provider
     // Add more fallback providers here
@@ -437,6 +438,7 @@ class EventFetcher {
             // Check if provider is connected
             this.checkSubscriptionsCount++;
             const isHealthy = await this.web3.eth.net.isListening();
+            console.log("Is healthy: ", isHealthy);
             if (!isHealthy || this.checkSubscriptionsCount > 4) {
                 this.checkSubscriptionsCount = 0;
                 console.log('Provider disconnected, reconnecting...');
@@ -590,12 +592,23 @@ class EventFetcher {
                     duplicateKeys.add(key);
                     
                     try {
-                        // Keep the existing one in our map and unsubscribe from the duplicate
+                        // Unsubscribe from both the existing and the duplicate
+                        const existingSub = this.subscriptionMap.get(key);
+                        if (existingSub) {
+                            existingSub.unsubscribe();
+                            console.log(`Unsubscribed from existing subscription: ${key}`);
+                        }
                         sub.unsubscribe();
                         console.log(`Unsubscribed from duplicate: ${key}`);
+                        
+                        // Remove from the map
+                        this.subscriptionMap.delete(key);
                     } catch (unsubError) {
                         console.error(`Error unsubscribing from duplicate: ${unsubError}`);
                     }
+                    
+                    // Re-subscribe to ensure we have a fresh subscription
+                    this.subscribeToPool(address);
                 } else {
                     uniqueKeys.add(key);
                     validSubs.push(sub);
@@ -1039,7 +1052,7 @@ class EventFetcher {
                     console.error(`Error processing pool event for ${poolAddress}:`, error);
                 }
             });
-            
+
             poolSub.on('error', (error) => {
                 console.error(`Error in pool subscription for ${poolAddress}:`, error);
                 // Remove the faulty subscription from our array

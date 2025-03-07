@@ -441,7 +441,7 @@ class EventFetcher {
             try {
                 const isHealthy = await this.web3.eth.net.isListening();
                 console.log("Is healthy: ", isHealthy);
-                if (!isHealthy || this.checkSubscriptionsCount > 4) {
+                if (!isHealthy || this.checkSubscriptionsCount > 2) {
                     this.checkSubscriptionsCount = 0;
                     console.log('Provider disconnected, reconnecting...');
                     this.handleDisconnect();

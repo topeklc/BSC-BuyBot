@@ -143,3 +143,34 @@ export function formatNewPoolMessage(tokenName: string, poolDetail: PoolDetail):
     return `**🚨 Bonding reached! New pool for token ${tokenName} has been created! 🚨**\n\n` +
            `**Pool Address:** [${poolDetail.address}](https://bscscan.com/address/${poolDetail.address})\n`
 }
+
+export function getHelpMessage(): string {
+    return `
+📢 Buy Bot - Setup Guide 📢
+
+🚀 Get real-time buy notifications in your group! Follow these steps to set up:
+
+1️⃣ Start the Bot
+🔹 Click Start or send /start (Only works in DMs to the bot).
+
+2️⃣ Register a Token
+🔹 Tap Register Token to begin setup.
+
+3️⃣ Choose a Group
+🔹 Click Choose Group (at the bottom of the chat).
+🔹 Select the Telegram group where you want buy notifications.
+
+4️⃣ Enter Token Address
+🔹 The bot will ask for the token address.
+🔹 After sending a valid address, the configuration menu will appear.
+
+5️⃣ Configure Settings (Optional)
+⚙ Set Media – Add a GIF or image for buy notifications.
+💰 Min Amount – Set a minimum $ amount for notifications.
+🌊 Pools – Select which liquidity pools to track.
+🔗 Socials – Add links to Telegram, X (Twitter), and website.
+🛠 Test – Preview your New Buy message.
+
+✅ Done! Buy Bot will now post notifications based on your setup! 🚀🔥
+    `;
+}

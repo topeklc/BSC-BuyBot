@@ -8,7 +8,7 @@ import { saveUser } from '../../DB/queries';
 import { callbackify } from 'util';
 import {groupTypeChangeHandler} from './handlers/utilsHandlers'
 import { updateTrending } from './libs/trending';
-
+import {getHelpMessage} from './libs/messages'
 
 dotenv.config();
 
@@ -46,11 +46,17 @@ bot.onText(/\/start/, async (msg: any) => {
         const opts = {
             reply_markup: {
                 inline_keyboard: [
-                    [
-                        {
+                        [
+                            {
                             text: '✍️Register Token',
                             callback_data: 'register'
-                        },
+                        }
+                    ],
+                        [
+                            {
+                                text: '❓Help',
+                                callback_data: 'help'
+                            },
                         {
                             text: '⚙️Configs',
                             callback_data: 'config_user_configs'
@@ -79,10 +85,22 @@ bot.on('callback_query', async function onCallbackQuery(callbackQuery) {
         console.debug(`action: ${action}, msg:`);
         console.debug(msg)
         const chatId = msg?.chat.id;
-        if (action === 'register' && chatId) {
-            registrationHandler(bot, chatId);
-        } else if (action?.startsWith('config_')) {
-            await configCallbackHandler(bot, callbackQuery);
+        switch (action) {
+            case 'register':
+            if (chatId) {
+                registrationHandler(bot, chatId);
+            }
+            break;
+            case 'help':
+            if (chatId) {
+                bot.sendMessage(chatId, getHelpMessage());
+            }
+            break;
+            default:
+            if (action?.startsWith('config_')) {
+                await configCallbackHandler(bot, callbackQuery);
+            }
+            break;
         }
     } catch (error) {
         logError('CallbackQuery', error as Error);

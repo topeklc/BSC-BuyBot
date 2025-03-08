@@ -1322,7 +1322,7 @@ class EventFetcher {
         // handle Springboard buys.
         const tokenInfo = await this.commonWeb3.getTokenInfo(String(decodedLog.token));
         const WBNBPrice = (await getPrice()).price_usd //get price of WBNB in usd
-        const spentAmount = (Number(decodedLog.cost) + Number(decodedLog.fee)) / 10**18
+        const spentAmount = Number(decodedLog.cost) / 10**18
         const spentDollars = spentAmount * WBNBPrice
         const price = spentDollars / (Number(decodedLog.amount) / 10**18)
         const holderIncrease = '0' //get holder increase

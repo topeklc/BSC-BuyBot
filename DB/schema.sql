@@ -168,3 +168,4 @@ CREATE TRIGGER update_trending_updated_at
     BEFORE UPDATE ON trending
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
+

@@ -71,7 +71,16 @@ export class CommonWeb3{
             return 0;
         }
     }
-
+    public async getBalanceOf(tokenAddress: string, holderAddress: string): Promise<number | undefined> {
+        try {
+            const tokenContract = new this.web3.eth.Contract(this.tokenAbi, tokenAddress);
+            const balance = Number(await tokenContract.methods.balanceOf(holderAddress).call());
+            return balance;
+        } catch (error) {
+            console.error(`Error getting balance for ${holderAddress} of token ${tokenAddress}:`, error);
+            return undefined;
+        }
+    }
     public async getTokenInfo(ca: string): Promise<TokenInfo> {
         try {
             console.log(`Fetching token info for ${ca}`);

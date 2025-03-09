@@ -7,6 +7,7 @@ import {getAllActiveTokens, getPrice, insertPool, getPoolsForToken, getAllConfig
 import { TokenInfo, BuyMessageData, PoolDetail } from '../types';
 import Web3WsProvider from 'web3-providers-ws'
 import { PoolSwapHandler } from './poolSwapHandler';
+import { getHolderIncrease } from './utils';
 
 const buyTopic = '0x7db52723a3b2cdd6164364b3b766e65e540d7be48ffa89582956d8eaebe62942';
 const newPoolTopic = '0xc18aa71171b358b706fe3dd345299685ba21a5316c66ffa9e319268b033c44b0';
@@ -15,7 +16,7 @@ const swapV2Topic = '0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840
 
 // Define an array of RPC providers to use as fallbacks
 const rpcProviders = [
-    "wss://rpc.ankr.com/bsc/ws/76932a0c09d0b6ff0405586fdb63e1316b4bddc62345b3eb9dd86822c82753e7",
+    // "wss://rpc.ankr.com/bsc/ws/76932a0c09d0b6ff0405586fdb63e1316b4bddc62345b3eb9dd86822c82753e7",
     process.env.WSS_WEB3_PROVIDER || "",  // Primary provider from environment
     "wss://bsc-rpc.publicnode.com",       // Fallback provider
     // Add more fallback providers here
@@ -1223,12 +1224,12 @@ class EventFetcher {
             console.log('Successfully decoded V2 swap event:', decodedLog);
             console.log('Decoded fields:', Object.keys(decodedLog));
             
-            // Validate we have the necessary fields
-            if (!decodedLog.amount0In || !decodedLog.amount1In || 
-                !decodedLog.amount0Out || !decodedLog.amount1Out) {
-                console.log('Missing amount fields in decoded event. Trying manual decode');
-                return this.manualDecodeSwapEventV2(data, topics);
-            }
+            // // Validate we have the necessary fields
+            // if (!decodedLog.amount0In || !decodedLog.amount1In || 
+            //     !decodedLog.amount0Out || !decodedLog.amount1Out) {
+            //     console.log('Missing amount fields in decoded event. Trying manual decode');
+            //     return this.manualDecodeSwapEventV2(data, topics);
+            // }
             
             return decodedLog;
         } catch (error) {
@@ -1258,8 +1259,8 @@ class EventFetcher {
             const cleanData = data.startsWith('0x') ? data.slice(2) : data;
             
             // Get sender and to from topics
-            const sender = topics.length > 1 ? topics[1] : '0x0000000000000000000000000000000000000000';
-            const to = topics.length > 2 ? topics[2] : '0x0000000000000000000000000000000000000000';
+            const sender = topics.length > 1 ? topics[1].replace('000000000000000000000000', '') : '0x0000000000000000000000000000000000000000';
+            const to = topics.length > 2 ? topics[2].replace('000000000000000000000000', '') : '0x0000000000000000000000000000000000000000';
             
             // Parse amount values from data - these are all uint256 (64 chars/32 bytes each)
             const amount0In = this.parseHexValue(cleanData.slice(0, 64));
@@ -1321,11 +1322,17 @@ class EventFetcher {
     private async getBuyMessageData(decodedLog: any, txHash: string): Promise<BuyMessageData> {
         // handle Springboard buys.
         const tokenInfo = await this.commonWeb3.getTokenInfo(String(decodedLog.token));
+
+        // Get holder balance
+        let holderIncrease = '0';
+        const holderBalance = await this.commonWeb3.getBalanceOf(tokenInfo.address, String(decodedLog.account));
+        if (holderBalance) {
+            holderIncrease = getHolderIncrease(holderBalance, Number(decodedLog.amount));
+        }
         const WBNBPrice = (await getPrice()).price_usd //get price of WBNB in usd
         const spentAmount = Number(decodedLog.cost) / 10**18
         const spentDollars = spentAmount * WBNBPrice
         const price = spentDollars / (Number(decodedLog.amount) / 10**18)
-        const holderIncrease = '0' //get holder increase
         const marketcap = (Number(tokenInfo.totalSupply) / 10**18) * price //get marketcap TODO check burned tokens
         const dex = 'Springboard' 
         const buy: BuyMessageData = {

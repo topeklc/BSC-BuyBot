@@ -1,7 +1,7 @@
 import { BuyMessageData } from '../types/types';
 import { CommonWeb3, WBNB } from '../CommonWeb3/common';
 import { getPrice, getTokenInfoFromDB, getAllActiveTokens } from '../DB/queries';
-
+import { getHolderIncrease } from './utils';
 /**
  * Processes swap events from Uniswap V3 style pools and converts them to BuyMessageData
  */
@@ -69,6 +69,12 @@ export class PoolSwapHandler {
             if (!activeTokens.includes(boughtTokenAddress)) {
                 console.log(`Skipping: Token ${boughtTokenAddress} not in active tracking list`);
                 return null;
+            }
+            // Get holder balance
+            let holderIncrease = '0';
+            const holderBalance = await this.commonWeb3.getBalanceOf(boughtTokenAddress, data.recipient);
+            if (holderBalance) {
+                holderIncrease = getHolderIncrease(holderBalance, boughtAmount);
             }
             
             // Get token information
@@ -143,10 +149,11 @@ export class PoolSwapHandler {
                 holderWallet: data.recipient,
                 pairAddress: poolAddress,
                 spentDollars: spentDollars,
-                holderIncrease: '0',
+                holderIncrease: holderIncrease,
                 marketcap: marketcap,
                 dex: 'PancakeSwapV3',
-                txHash: txHash
+                txHash: txHash,
+                bondingStatus: undefined
             };
             
             console.log('Created buy message data:', buyMessage);
@@ -232,7 +239,12 @@ export class PoolSwapHandler {
                 console.log(`Skipping: Token ${boughtTokenAddress} not in active tracking list`);
                 return null;
             }
-            
+            // Get holder balance
+            let holderIncrease = '0';
+            const holderBalance = await this.commonWeb3.getBalanceOf(boughtTokenAddress, data.to);
+            if (holderBalance) {
+                holderIncrease = getHolderIncrease(holderBalance, boughtAmount);
+            }
             // Get token information for both tokens
             console.log(`Fetching token details - bought: ${boughtTokenAddress}, sold: ${soldTokenAddress}`);
             const boughtTokenInfo = await this.getTokenDetails(boughtTokenAddress);
@@ -311,10 +323,11 @@ export class PoolSwapHandler {
                 holderWallet: data.to,
                 pairAddress: poolAddress,
                 spentDollars: spentDollars,
-                holderIncrease: '0', // Placeholder, would need additional data to calculate
+                holderIncrease: holderIncrease, // Placeholder, would need additional data to calculate
                 marketcap: marketcap,
                 dex: 'PancakeSwapV2', // Indicate this is from PancakeSwap V2
-                txHash: txHash
+                txHash: txHash,
+                bondingStatus: undefined
             };
             
             console.log('Created buy message data:', buyMessage);

@@ -71,13 +71,18 @@ function generateSocialLinksString(socials: Socials): string {
     // Return formatted string if there are any links, otherwise empty string
     return socialLinks.length > 0 ? `**👥${socialLinks.join(' | ')}**\n` : '';
 }
+// const getHolderIncreaseText = (increase: string) => {
+//     if (!increase) return '';
+//     if (increase.startsWith('New')) return `**👥 ${increase}**\n`;
+//     if (increase.startsWith('+')) return `**⏫ Position Increase: ${increase}**\n`;
+//     return '';
+// };
 const getHolderIncreaseText = (increase: string) => {
     if (!increase) return '';
-    if (increase.startsWith('New')) return `**👥 ${increase}**\n`;
-    if (increase.startsWith('+')) return `**⏫ Position Increase: ${increase}**\n`;
+    if (increase.startsWith('New')) return `: New!\n`;
+    if (increase.startsWith('+')) return `: ${increase}\n`;
     return '';
 };
-
 export function formatBuyMessage(data: BuyMessageData, subscriberData: SubscriberData, rank: number | undefined=undefined): string {
     let chartLinks = '';
     if (data.pairAddress && data.pairAddress !== '0x0000000000000000000000000000000000000000') {
@@ -97,19 +102,18 @@ export function formatBuyMessage(data: BuyMessageData, subscriberData: Subscribe
     const emojis = subscriberData.emoji.repeat(Math.min(Math.floor(data.spentDollars) / emojiDenominator | 1, 250));
     const socials = generateSocialLinksString(subscriberData.socials)
     
-    const holderIncrease = getHolderIncreaseText(data.holderIncrease);
+    const holderIncrease = getHolderIncreaseText(data.holderIncrease) || '';
     let trending = '';
     if (rank) {
         trending = `\n🚀[BSCTrending ${trendingNumbersMap[rank - 1]}](https://t.me/icp_trending)`;
     }
-    const holderWallet = data.holderWallet ? `**💸[Holder wallet](https://bscscan.com/address/${data.holderWallet})**\n` : ''
+    const holderWallet = data.holderWallet ? `**💸[Holder${holderIncrease}](https://bscscan.com/address/${data.holderWallet})**\n` : ''
     return [
         `**__🚨 ${tokenName} New Buy!🚨__**\n\n`,
         `${emojis}\n\n`,
         `**💰Spent: ${formatTokenAmount(data.spentToken.amount)} ${data.spentToken.symbol} \\[$${formatDollarAmount(data.spentDollars)}\]**\n`,
         `**🧳Bought: ${formatTokenAmount(data.gotToken.amount)} $${data.gotToken.symbol}**\n`,
         `**💵Price: $${formatTokenAmount(data.gotToken.priceUSD)}**\n`,
-        holderIncrease,
         `**📊Marketcap: $${formatDollarAmount(data.marketcap, false)}**\n\n`,
         txDetailsLink,
         holderWallet,

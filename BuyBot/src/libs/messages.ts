@@ -79,8 +79,8 @@ function generateSocialLinksString(socials: Socials): string {
 // };
 const getHolderIncreaseText = (increase: string) => {
     if (!increase) return '';
-    if (increase.startsWith('New')) return `: New!\n`;
-    if (increase.startsWith('+')) return `: ${increase}\n`;
+    if (increase.startsWith('New')) return `: New!`;
+    if (increase.startsWith('+')) return `: ${increase}`;
     return '';
 };
 export function formatBuyMessage(data: BuyMessageData, subscriberData: SubscriberData, rank: number | undefined=undefined): string {

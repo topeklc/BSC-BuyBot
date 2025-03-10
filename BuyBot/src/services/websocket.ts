@@ -493,11 +493,11 @@ export class WebSocketClient {
             }
             try {
                 logInfo('NewPool Message', 'Sending new pool message', formattedMessage);
+                await sendBuyMessage(this.bot, -4157351129, formattedMessage, buyUrl);
             } catch(error) {
                 logError('Failed to send new pool message to trending', error as Error);
                 logInfo('NewPool Message', 'Sending new pool message', formattedMessage);
             }
-            await sendBuyMessage(this.bot, -4157351129, formattedMessage, buyUrl);
         } catch (error) {
             logError('Error handling new pool message', error as Error);
         }

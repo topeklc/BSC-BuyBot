@@ -1124,9 +1124,9 @@ class EventFetcher {
                 topics.slice(1) // Skip the event signature, keep indexed params
             );
             
-            console.log('Successfully decoded V3 swap event:', decodedLog);
-            console.log('amount0 type:', typeof decodedLog.amount0);
-            console.log('amount1 type:', typeof decodedLog.amount1);
+            // console.log('Successfully decoded V3 swap event:', decodedLog);
+            // console.log('amount0 type:', typeof decodedLog.amount0);
+            // console.log('amount1 type:', typeof decodedLog.amount1);
             
             // Ensure we have the expected fields
             if (typeof decodedLog.amount0 === 'undefined' || typeof decodedLog.amount1 === 'undefined') {
@@ -1187,7 +1187,7 @@ class EventFetcher {
                 tick
             };
             
-            console.log('Successfully manually decoded swap event:', decoded);
+            // console.log('Successfully manually decoded swap event:', decoded);
             return decoded;
         } catch (error) {
             console.error('Error in manual decoding of swap event:', error);
@@ -1200,9 +1200,9 @@ class EventFetcher {
      */
     private decodeSwapEventV2(data: string, topics: string[]): any {
         try {
-            console.log('Decoding V2 swap event data using ABI decoder');
-            console.log('Topics:', topics);
-            console.log('Raw data:', data);
+            // console.log('Decoding V2 swap event data using ABI decoder');
+            // console.log('Topics:', topics);
+            // console.log('Raw data:', data);
             
             // Use a hardcoded and correct V2 Swap event definition - this is more reliable
             const swapEventInputs = [
@@ -1221,8 +1221,8 @@ class EventFetcher {
                 topics.slice(1) // Skip the event signature topic
             );
             
-            console.log('Successfully decoded V2 swap event:', decodedLog);
-            console.log('Decoded fields:', Object.keys(decodedLog));
+            // console.log('Successfully decoded V2 swap event:', decodedLog);
+            // console.log('Decoded fields:', Object.keys(decodedLog));
             
             // // Validate we have the necessary fields
             // if (!decodedLog.amount0In || !decodedLog.amount1In || 

@@ -21,9 +21,15 @@ export class WebSocketClient {
     private connectionCheckInterval: NodeJS.Timeout | null = null;
     // Add a message cache to prevent duplicate processing
     private recentMessages: Map<string, number> = new Map();
-    private readonly MESSAGE_CACHE_TIMEOUT = 60000; // 60 seconds
+    private readonly MESSAGE_CACHE_TIMEOUT = 300000; // 5 minutes - increased from 60 seconds
     // Add a set to track processed transaction hashes
     private processedTxHashes: Set<string> = new Set();
+    // Track connection state for more reliable connection management
+    private connectionActive: boolean = false;
+    // Track last reconnect time to prevent rapid reconnection attempts
+    private lastReconnectTime: number = 0;
+    // Minimum time between reconnect attempts (30 seconds)
+    private readonly MIN_RECONNECT_INTERVAL = 1000;
 
     constructor(bot: TelegramBot) {
         this.bot = bot;
@@ -33,18 +39,32 @@ export class WebSocketClient {
     }
 
     private connect(): WebSocket | null {
+        // Check if we're already connecting
         if (this.isConnecting) {
             logInfo('WebSocket', 'Connection attempt already in progress');
             return this.ws;
         }
 
+        // Check if we've exceeded max reconnect attempts
         if (this.reconnectCount >= this.maxReconnectAttempts) {
             logError('WebSocket', `Exceeded maximum reconnection attempts (${this.maxReconnectAttempts})`);
             return null;
         }
+        
+        // Check if we're reconnecting too quickly
+        const now = Date.now();
+        if (now - this.lastReconnectTime < this.MIN_RECONNECT_INTERVAL) {
+            const waitTime = Math.ceil((this.MIN_RECONNECT_INTERVAL - (now - this.lastReconnectTime)) / 1000);
+            logInfo('WebSocket', `Reconnecting too quickly, will try again in ${waitTime} seconds`);
+            this.scheduleReconnect(this.MIN_RECONNECT_INTERVAL - (now - this.lastReconnectTime));
+            return null;
+        }
+        
+        // Update reconnect time
+        this.lastReconnectTime = now;
 
         this.isConnecting = true;
-        const wsUrl = `ws://${process.env.FETCHER_HOST || 'localhost'}:${process.env.FETCHER_PORT || 3000}`;
+        const wsUrl = `ws://${process.env.FETCHER_HOST || 'localhost'}:${process.env.FETCHER_PORT || 2111}`; // Changed default port to 2111
         logInfo('WebSocket', `Connecting to ${wsUrl} (attempt ${this.reconnectCount + 1})`);
         
         // Add connection timeout
@@ -66,6 +86,7 @@ export class WebSocketClient {
                 clearTimeout(connectionTimeout);
                 logInfo('WebSocket', 'Connected to Fetcher');
                 this.isConnecting = false;
+                this.connectionActive = true;
                 this.reconnectCount = 0; // Reset count on successful connection
                 this.lastMessageTime = Date.now();
                 
@@ -75,12 +96,17 @@ export class WebSocketClient {
                 }
                 
                 // Send a handshake message to confirm connection
-                ws.send(JSON.stringify({ 
-                    type: 'ClientHandshake', 
-                    client: 'BuyBot',
-                    version: '1.0.0',
-                    timestamp: new Date().toISOString()
-                }));
+                try {
+                    ws.send(JSON.stringify({ 
+                        type: 'ClientHandshake', 
+                        client: 'BuyBot',
+                        version: '1.0.0',
+                        timestamp: new Date().toISOString()
+                    }));
+                    logInfo('WebSocket', 'Sent handshake message');
+                } catch (error) {
+                    logError('WebSocket', `Error sending handshake: ${error}`);
+                }
                 
                 // Start periodic pings to keep connection alive
                 this.startPingInterval(ws);
@@ -128,8 +154,16 @@ export class WebSocketClient {
 
             ws.on('close', (code, reason) => {
                 logInfo('WebSocket', `Connection closed. Code: ${code}, Reason: ${reason.toString()}`);
+                this.connectionActive = false;
                 this.cleanup();
-                this.scheduleReconnect();
+                
+                // Only reconnect for certain close codes
+                // 1000 = normal closure, 1001 = going away
+                if (code !== 1000 && code !== 1001) {
+                    this.scheduleReconnect();
+                } else {
+                    logInfo('WebSocket', 'Normal closure, not reconnecting automatically');
+                }
             });
 
             ws.on('error', (error) => {
@@ -157,17 +191,31 @@ export class WebSocketClient {
         
         // Check connection health every minute
         this.connectionCheckInterval = setInterval(() => {
+            // Only check if we think we're connected
+            if (!this.connectionActive && !this.isConnecting) {
+                logInfo('WebSocket', 'Connection not active, attempting to connect');
+                this.connect();
+                return;
+            }
+            
             const now = Date.now();
             const timeSinceLastMessage = now - this.lastMessageTime;
             
             // If no message for 2 minutes, consider connection dead
             if (timeSinceLastMessage > 120000) { // 2 minutes
                 logError('WebSocket', `No messages received for ${Math.round(timeSinceLastMessage/1000)} seconds, reconnecting`);
+                this.connectionActive = false;
                 this.cleanup();
                 this.connect();
-            } else {
+            } else if (this.ws && this.ws.readyState === WebSocket.OPEN) {
                 // Send ping to keep connection alive
                 this.sendPing();
+            } else if (this.ws && this.ws.readyState !== WebSocket.CONNECTING) {
+                // If socket exists but is not open or connecting, reconnect
+                logInfo('WebSocket', `Socket in unexpected state: ${this.ws.readyState}, reconnecting`);
+                this.connectionActive = false;
+                this.cleanup();
+                this.connect();
             }
         }, 60000); // Check every minute
     }
@@ -227,6 +275,7 @@ export class WebSocketClient {
                 // Only close if not already closed
                 if (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING) {
                     this.ws.close();
+                    logInfo('WebSocket', 'Closed WebSocket connection');
                 }
             } catch (error) {
                 logError('WebSocket', `Error closing WebSocket: ${error}`);
@@ -235,22 +284,31 @@ export class WebSocketClient {
         }
         
         this.isConnecting = false;
+        this.connectionActive = false;
     }
 
-    private scheduleReconnect(): void {
+    private scheduleReconnect(forcedDelay?: number): void {
+        // Don't schedule if we already have a reconnect pending or are currently connecting
         if (this.reconnectTimeout || this.isConnecting) {
             return;
         }
         
-        // Exponential backoff with jitter
-        const baseDelay = this.reconnectInterval;
-        const maxDelay = 60000; // Max 1 minute
+        // Use forced delay if provided, otherwise calculate with backoff
+        let delay: number;
         
-        // Calculate delay with exponential backoff
-        let delay = Math.min(baseDelay * Math.pow(1.5, this.reconnectCount), maxDelay);
-        
-        // Add jitter (±20%)
-        delay = delay * (0.8 + Math.random() * 0.4);
+        if (forcedDelay !== undefined) {
+            delay = forcedDelay;
+        } else {
+            // Exponential backoff with jitter
+            const baseDelay = this.reconnectInterval;
+            const maxDelay = 60000; // Max 1 minute
+            
+            // Calculate delay with exponential backoff
+            delay = Math.min(baseDelay * Math.pow(1.5, this.reconnectCount), maxDelay);
+            
+            // Add jitter (±20%)
+            delay = delay * (0.8 + Math.random() * 0.4);
+        }
         
         logInfo('WebSocket', `Scheduling reconnect in ${Math.round(delay/1000)} seconds`);
         

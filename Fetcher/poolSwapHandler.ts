@@ -156,7 +156,7 @@ export class PoolSwapHandler {
                 bondingStatus: undefined
             };
             
-            console.log('Created buy message data:', buyMessage);
+            console.log(':', buyMessage);
             return buyMessage;
         } catch (error) {
             console.error('Error processing swap event:', error);
@@ -170,12 +170,6 @@ export class PoolSwapHandler {
     public async processSwapEventV2(poolAddress: string, data: any, txHash: string): Promise<BuyMessageData | null> {
         try {
             console.log('Processing V2 swap event data:', data);
-            
-            // First, validate that we have the necessary fields
-            if (!data || !data.token0Address || !data.token1Address) {
-                console.error('V2 swap missing token addresses:', data);
-                return null;
-            }
             
             // Extract and normalize the amounts with better safety
             const amount0In = this.safeConvertToNumber(data.amount0In);

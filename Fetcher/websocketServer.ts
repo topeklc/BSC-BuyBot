@@ -1,13 +1,16 @@
-import WebSocket, { Server } from 'ws';
+import WebSocket from 'ws';
 import http from 'http';
 
 // Export the class with a named export instead of default export
 export class WebSocketServer {
-  private server: Server;
+  private server: WebSocket.Server;
+  private serverListening: boolean = false;
   private clients: Set<WebSocket> = new Set();
   private httpServer: http.Server;
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private reconnectAttemptInterval: NodeJS.Timeout | null = null;
+  private diagnosticInterval: NodeJS.Timeout | null = null;
+  private lastNoClientsWarning: number = 0;
   
   constructor() {
 
@@ -17,11 +20,18 @@ export class WebSocketServer {
 
   private initServer() {
     try {
+      // Prevent multiple simultaneous initialization attempts
+      if (this.server && this.serverListening) {
+        console.log('Server already initialized and listening, skipping initialization');
+        return;
+      }
+      
       const port = process.env.FETCHER_PORT ? parseInt(process.env.FETCHER_PORT) : 2111;
       console.log(`Starting WebSocket server on port ${port}`);
       // Clean up any existing server
       this.cleanup();
       
+      // Create a new HTTP server with improved error handling
       this.httpServer = http.createServer((req, res) => {
           // Simple health check endpoint
           if (req.url === '/health') {
@@ -29,7 +39,8 @@ export class WebSocketServer {
               res.end(JSON.stringify({ 
                   status: 'healthy',
                   clients: this.clients.size,
-                  uptime: process.uptime()
+                  uptime: process.uptime(),
+                  timestamp: new Date().toISOString()
               }));
           } else {
               res.writeHead(404);
@@ -70,6 +81,7 @@ export class WebSocketServer {
       
       this.server.on('close', () => {
         console.log('WebSocket server closed');
+        this.serverListening = false;
         this.scheduleServerRestart();
       });
       
@@ -80,22 +92,35 @@ export class WebSocketServer {
       
       this.httpServer.listen(port, () => {
           console.log(`WebSocket server listening on port ${port}`);
+          this.serverListening = true;
       });
       
       // Setup heartbeat to keep connections alive and detect stale clients
       this.heartbeatInterval = setInterval(() => this.sendHeartbeats(), 30000);
 
-      // Debug periodic logging of client count
-      setInterval(() => {
-          console.log(`Current WebSocket clients: ${this.clients.size}`);
-          if (this.clients.size === 0) {
-              console.log("Warning: No connected clients to receive broadcasts");
-          }
+      // Debug periodic logging of client count - store the interval so we can clear it on cleanup
+      const clientCountInterval = setInterval(() => {
+          // Only log if there are clients or if there are no clients (but only log the warning once every 5 minutes)
+          const currentTime = Date.now();
+          const shouldLogWarning = this.clients.size === 0 && 
+                                 (!this.lastNoClientsWarning || currentTime - this.lastNoClientsWarning > 300000);
           
-          // Log some diagnostics
-          const memory = process.memoryUsage();
-          console.log(`Memory: ${Math.round(memory.rss / 1024 / 1024)}MB RSS, ${Math.round(memory.heapUsed / 1024 / 1024)}MB Heap Used`);
+          if (this.clients.size > 0 || shouldLogWarning) {
+              console.log(`Current WebSocket clients: ${this.clients.size}`);
+              
+              if (shouldLogWarning) {
+                  console.log("Warning: No connected clients to receive broadcasts");
+                  this.lastNoClientsWarning = currentTime;
+              }
+              
+              // Log some diagnostics
+              const memory = process.memoryUsage();
+              console.log(`Memory: ${Math.round(memory.rss / 1024 / 1024)}MB RSS, ${Math.round(memory.heapUsed / 1024 / 1024)}MB Heap Used`);
+          }
       }, 60000);
+      
+      // Store the interval so we can clear it during cleanup
+      this.diagnosticInterval = clientCountInterval;
       
     } catch (error) {
       console.error('Error initializing WebSocket server:', error);
@@ -106,13 +131,20 @@ export class WebSocketServer {
   private scheduleServerRestart() {
     if (this.reconnectAttemptInterval) {
       clearTimeout(this.reconnectAttemptInterval);
+      this.reconnectAttemptInterval = null;
     }
     
-    console.log('Scheduling server restart in 5 seconds...');
-    this.reconnectAttemptInterval = setTimeout(() => {
-      console.log('Attempting to restart WebSocket server...');
-      this.initServer();  // Default port
-    }, 5000);
+    // Only schedule a restart if we haven't already scheduled one
+    if (!this.reconnectAttemptInterval) {
+      console.log('Scheduling server restart in 5 seconds...');
+      this.reconnectAttemptInterval = setTimeout(() => {
+        console.log('Attempting to restart WebSocket server...');
+        this.reconnectAttemptInterval = null;
+        this.initServer();  // Default port
+      }, 5000);
+    } else {
+      console.log('Server restart already scheduled, skipping duplicate request');
+    }
   }
   
   private cleanup() {
@@ -125,6 +157,11 @@ export class WebSocketServer {
     if (this.reconnectAttemptInterval) {
       clearTimeout(this.reconnectAttemptInterval);
       this.reconnectAttemptInterval = null;
+    }
+    
+    if (this.diagnosticInterval) {
+      clearInterval(this.diagnosticInterval);
+      this.diagnosticInterval = null;
     }
     
     // Close existing clients
@@ -140,23 +177,38 @@ export class WebSocketServer {
       this.clients.clear();
     }
     
-    // Close existing server
+    // Close existing server with a more robust approach
     if (this.server) {
       try {
-        this.server.close();
-        console.log('Closed WebSocket server');
+        // Only close if it's actually listening
+        if (this.serverListening) {
+          this.server.close();
+          this.serverListening = false;
+          console.log('Closed WebSocket server');
+        } else {
+          console.log('WebSocket server already closed');
+          // Cannot set to null due to type constraints, but we'll recreate it later
+        }
       } catch (error) {
         console.error('Error closing WebSocket server:', error);
+        // Cannot set to null due to type constraints, but we'll recreate it later
       }
     }
     
-    // Close existing HTTP server
+    // Close existing HTTP server with a more robust approach
     if (this.httpServer) {
       try {
-        this.httpServer.close();
-        console.log('Closed HTTP server');
+        // Only close if it's actually listening
+        if (this.httpServer.listening) {
+          this.httpServer.close();
+          console.log('Closed HTTP server');
+        } else {
+          console.log('HTTP server already closed');
+          // Cannot set to null due to type constraints, but we'll recreate it later
+        }
       } catch (error) {
         console.error('Error closing HTTP server:', error);
+        // Cannot set to null due to type constraints, but we'll recreate it later
       }
     }
   }
@@ -165,21 +217,23 @@ export class WebSocketServer {
    * Send heartbeats to all clients to check if they're still alive
    */
   private sendHeartbeats(): void {
-    console.log(`Sending heartbeat to ${this.clients.size} clients`);
+    // Only log heartbeats if we have clients to avoid log spam
+    if (this.clients.size > 0) {
+      console.log(`Sending heartbeat to ${this.clients.size} clients`);
+    }
     
-    if (this.clients.size === 0) {
-      // If no clients for a while, check if server is still healthy
-      try {
-        if (this.server && !this.server.listening) {
-          console.log('WebSocket server not listening, restarting...');
-          this.scheduleServerRestart();
-          return;
-        }
-      } catch (error) {
-        console.error('Error checking server health:', error);
+    // Check server health regardless of client count
+    try {
+      // Check both WebSocket server and HTTP server health
+      if (!this.server || !this.serverListening || !this.httpServer || !this.httpServer.listening) {
+        console.log('WebSocket server or HTTP server not listening, restarting...');
         this.scheduleServerRestart();
         return;
       }
+    } catch (error) {
+      console.error('Error checking server health:', error);
+      this.scheduleServerRestart();
+      return;
     }
     
     this.clients.forEach(client => {
@@ -258,7 +312,7 @@ export class WebSocketServer {
     // If all clients failed, maybe server has an issue
     if (this.clients.size > 0 && successCount === 0) {
       console.log('All broadcasts failed, checking server health...');
-      if (!this.server || !this.server.listening) {
+      if (!this.server || !this.serverListening) {
         this.scheduleServerRestart();
       }
     }
@@ -360,3 +414,5 @@ export class WebSocketServer {
 
 // Add this line to support both default and named imports
 export default WebSocketServer;
+
+

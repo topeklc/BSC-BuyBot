@@ -35,17 +35,17 @@ const socialValidations: Record<keyof Socials, SocialValidation> = {
             if (isUnsetCommand(url)) return null;
             
             // Keep @ format as is
-            if (url.startsWith('@')) return url;
+            if (url.startsWith('@')) return `t.me/${url.substring(1)}`;
             
             // Extract username from t.me URL
             const match = url.match(/(?:t\.me|telegram\.me)\/([a-zA-Z0-9_]+)/i);
             if (match) {
-                return `@${match[1]}`;
+                return `t.me/${match[1]}`;
             }
             
             // If it's just a username without @, add it
             if (/^[a-zA-Z0-9_]+$/.test(url)) {
-                return `@${url}`;
+                return `t.me/${url}`;
             }
             
             return url;

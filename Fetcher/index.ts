@@ -3,6 +3,7 @@ dotenv.config();
 
 import eventFetcher from './eventFetcher';
 import {PriceFetcher} from './priceFetcher';
+import {BlockPoller} from './blockPoller';
 
 // Global error handlers
 process.on('uncaughtException', (err) => {
@@ -20,12 +21,12 @@ process.on('unhandledRejection', (reason, promise) => {
 const fetchEvents = async () => {
     new PriceFetcher().start();
 
-    // Create event fetcher and pass websocket server for event broadcasting
-    const fetcher = new eventFetcher();
+    // // Create event fetcher and pass websocket server for event broadcasting
+    // const fetcher = new eventFetcher();
     
-    // Start fetching events
-    await fetcher.start();
-    
+    // // Start fetching events
+    // await fetcher.start();
+    new BlockPoller().start();
     // Handle process shutdown
     const shutdown = () => {
         console.log('Shutting down...');

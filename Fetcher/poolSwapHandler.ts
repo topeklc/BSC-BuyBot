@@ -67,7 +67,7 @@ export class PoolSwapHandler {
             // Check if the bought token is one we want to track
             const activeTokens = await getAllActiveTokens();
             if (!activeTokens.includes(boughtTokenAddress)) {
-                console.log(`Skipping: Token ${boughtTokenAddress} not in active tracking list`);
+                console.log(`Skipping: Token ${boughtTokenAddress} not in active tracking list ${activeTokens}`);
                 return null;
             }
             // Get holder balance
